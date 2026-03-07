@@ -1,0 +1,142 @@
+{% if shop.metafields.vip.pass_variant_id %}
+
+{% if template.name == 'product' %}
+
+{% assign base_price = product.selected_or_first_available_variant.price %}
+{% assign subscribe_price = base_price | times: 0.8 %}
+{% assign vip_price = base_price | times: 0.5 %}
+
+<div class="vip-purchase-options">
+
+<fieldset class="product-form__input">
+<legend class="form__label">Choose Purchase Option</legend>
+
+
+<label class="vip-option">
+  <input type="radio" name="purchase_option" value="vip" checked>
+
+  <div class="vip-option-content">
+    <div class="vip-option-title">VIP Club Membership</div>
+
+    <div class="vip-option-desc">
+      ✓ Free SCI Travel Packs<br>
+      ✓ Easily edit, skip or cancel anytime<br>
+      ✓ 0-Day Money Back Guarantee
+    </div>
+  </div>
+
+  <div class="vip-option-price">
+    {{ vip_price | money }}
+  </div>
+</label>
+
+
+
+<label class="vip-option">
+  <input type="radio" name="purchase_option" value="subscribe">
+
+  <div class="vip-option-content">
+    <div class="vip-option-title">Subscribe and Save</div>
+
+    <div class="vip-option-desc">
+      ✓ Free SCI Travel Packs<br>
+      ✓ Easily edit, skip or cancel anytime<br>
+      ✓ 0-Day Money Back Guarantee
+    </div>
+  </div>
+
+  <div class="vip-option-price">
+    {{ subscribe_price | money }}
+  </div>
+</label>
+
+
+
+<label class="vip-option">
+  <input type="radio" name="purchase_option" value="regular" >
+
+  <div class="vip-option-content">
+    <div class="vip-option-title">Buy one time</div>
+  </div>
+
+  <div class="vip-option-price">
+    {{ base_price | money }}
+  </div>
+</label>
+
+</fieldset>
+
+</div>
+
+
+<style>
+
+.vip-purchase-options{
+margin-top:20px;
+}
+
+.vip-option{
+display:flex;
+align-items:flex-start;
+gap:15px;
+border:1px solid #e5e5e5;
+border-radius:12px;
+padding:16px;
+margin-bottom:12px;
+cursor:pointer;
+}
+
+.vip-option input{
+margin-top:4px;
+}
+
+.vip-option-content{
+flex:1;
+}
+
+.vip-option-title{
+font-weight:600;
+margin-bottom:4px;
+}
+
+.vip-option-desc{
+font-size:13px;
+color:#666;
+}
+
+.vip-option-price{
+font-weight:600;
+white-space:nowrap;
+}
+
+.vip-option:has(input:checked){
+border:2px solid #39c6c6;
+}
+
+</style>
+
+{% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+
+  const price = document.querySelector('.price--large');
+
+  if(price){
+    price.closest('.price').style.display = "none";
+  }
+
+});
+</script>
+
+
+
+{% endif %}
+
+{% schema %}
+{
+"name": "VIP Purchase Options",
+"target": "section",
+"templates": ["product"]
+}
+{% endschema %}

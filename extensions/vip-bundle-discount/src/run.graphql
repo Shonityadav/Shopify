@@ -1,0 +1,23 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+        }
+      }
+      vipBundle: attribute(key: "_vip_bundle") {
+        value
+      }
+    }
+  }
+
+  shop {
+    metafield(namespace: "vip", key: "pass_variant_id") {
+      value
+    }
+  }
+}
