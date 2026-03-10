@@ -7,6 +7,8 @@ export async function createVipPass(data) {
     store: data.store,
     name: data.name,
     duration_months: data.duration_months,
+    discount_percentage: data.discount_percentage,
+    benefits: data.benefits,
     price: data.price,
     shopify_product_id: data.shopify_product_id,
     shopify_variant_id: data.shopify_variant_id,

@@ -12,20 +12,24 @@ import { Form, useActionData } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { connectToDatabase } from "../mongodb.server";
-
+import { createVipPass } from "../models/VipPass.server";
 
 
 // ---------------- ACTION ----------------
 
 export const action = async ({ request }) => {
-    
+
   const { admin, session } = await authenticate.admin(request);
 
   const formData = await request.formData();
 
   const name = formData.get("name");
   const price = formData.get("price");
+  const percentage = formData.get("percentage");
+  const duration = formData.get("duration");
+  const benefits = formData.get("benefits");
 
+  await connectToDatabase();
 
   try {
 
@@ -49,13 +53,14 @@ export const action = async ({ request }) => {
       mutation {
         productCreate(product: {
           title: "${name}",
+          descriptionHtml: "<p>${benefits}</p>",
           status: ACTIVE,
           productType: "vip_membership",
           tags: ["vip_pass"]
         }) {
           product {
             id
-            variants(first: 1) {
+            variants(first:1) {
               edges {
                 node {
                   id
@@ -99,22 +104,19 @@ export const action = async ({ request }) => {
           productVariants {
             id
           }
-          userErrors {
-            message
-          }
         }
       }
     `);
-    // ---------------- GET ONLINE STORE PUBLICATION ----------------
+
+
+    // ---------------- PUBLISH PRODUCT ----------------
 
     const publicationResponse = await admin.graphql(`
       {
-        publications(first: 10) {
-          edges {
-            node {
-              id
-              name
-            }
+        publications(first:5){
+          nodes{
+            id
+            name
           }
         }
       }
@@ -122,12 +124,9 @@ export const action = async ({ request }) => {
 
     const publicationData = await publicationResponse.json();
 
-    const onlineStore = publicationData.data.publications.edges.find(
-      p => p.node.name === "Online Store"
+    const onlineStore = publicationData.data.publications.nodes.find(
+      p => p.name === "Online Store"
     );
-
-
-    // ---------------- PUBLISH PRODUCT ----------------
 
     if (onlineStore) {
 
@@ -136,7 +135,7 @@ export const action = async ({ request }) => {
           publishablePublish(
             id: "${productId}",
             input: {
-              publicationId: "${onlineStore.node.id}"
+              publicationId: "${onlineStore.id}"
             }
           ) {
             publishable {
@@ -150,23 +149,39 @@ export const action = async ({ request }) => {
 
     }
 
-    // ---------------- SAVE TO DATABASE ----------------
 
-    const db = await connectToDatabase();
+    // ---------------- CREATE PRODUCT METAFIELDS ----------------
 
-    await db.collection("passes").insertOne({
-    store: session.shop,
-    name,
-    duration_months: 1,
-    price: Number(price),
-    shopify_product_id: productId,
-    shopify_variant_id: variantId,
-    is_active: true,
-    createdAt: new Date(),
-    });
+    await admin.graphql(`
+      mutation {
+        metafieldsSet(metafields: [
+
+          {
+            namespace: "vip"
+            key: "discount_percentage"
+            ownerId: "${productId}"
+            type: "number_integer"
+            value: "${percentage}"
+          },
+
+          {
+            namespace: "vip"
+            key: "duration_months"
+            ownerId: "${productId}"
+            type: "number_integer"
+            value: "${duration}"
+          }
+
+        ]) {
+          metafields {
+            id
+          }
+        }
+      }
+    `);
 
 
-    // ---------------- SAVE VARIANT IN SHOP METAFIELD ----------------
+    // ---------------- SAVE VARIANT ID IN SHOP METAFIELD ----------------
 
     await admin.graphql(`
       mutation {
@@ -187,10 +202,23 @@ export const action = async ({ request }) => {
     `);
 
 
+    // ---------------- SAVE TO MONGODB ----------------
+
+    await createVipPass({
+      store: session.shop,
+      name,
+      duration_months: duration,
+      discount_percentage: percentage,
+      benefits,
+      price,
+      shopify_product_id: productId,
+      shopify_variant_id: variantId,
+    });
+
+
     return {
       success: true,
-      productId,
-      variantId
+      productId
     };
 
   } catch (error) {
@@ -214,6 +242,9 @@ export default function CreateVipPass() {
 
   const [name, setName] = useState("VIP Monthly Pass");
   const [price, setPrice] = useState("29");
+  const [percentage, setPercentage] = useState("50");
+  const [duration, setDuration] = useState("1");
+  const [benefits, setBenefits] = useState("");
 
   return (
 
@@ -221,7 +252,7 @@ export default function CreateVipPass() {
 
       {actionData?.success && (
         <Banner tone="success" title="VIP Pass Created Successfully">
-          Product ID: {actionData.productId}
+          Product created successfully
         </Banner>
       )}
 
@@ -237,7 +268,7 @@ export default function CreateVipPass() {
           <FormLayout>
 
             <TextField
-              label="Pass Name"
+              label="Pass Title"
               value={name}
               onChange={setName}
               name="name"
@@ -250,7 +281,31 @@ export default function CreateVipPass() {
               value={price}
               onChange={setPrice}
               name="price"
-              autoComplete="off"
+            />
+
+            <TextField
+              label="Discount Percentage"
+              type="number"
+              suffix="%"
+              value={percentage}
+              onChange={setPercentage}
+              name="percentage"
+            />
+
+            <TextField
+              label="Duration (Months)"
+              type="number"
+              value={duration}
+              onChange={setDuration}
+              name="duration"
+            />
+
+            <TextField
+              label="VIP Benefits"
+              value={benefits}
+              onChange={setBenefits}
+              name="benefits"
+              multiline={4}
             />
 
             <Button submit variant="primary">
@@ -265,4 +320,5 @@ export default function CreateVipPass() {
     </Page>
 
   );
+
 }

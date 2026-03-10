@@ -9,56 +9,113 @@ function add30Days(date) {
   return newDate;
 }
 
-// Utility: Generate random code
-function generateCode() {
-  return "VIP-" + Math.random().toString(36).substring(2, 10).toUpperCase();
-}
-
 export const action = async ({ request }) => {
-  console.log("order create webhook triggered");
+
+  console.log("🔥 ORDERS_CREATE webhook triggered");
+
   const { topic, shop, admin, payload } =
     await authenticate.webhook(request);
+
+  console.log("Webhook Topic:", topic);
+  console.log("Shop:", shop);
+  console.log("Order ID:", payload?.id);
 
   await validateShopActive(shop);
 
   if (topic !== "ORDERS_CREATE") {
+    console.log("⚠ Ignored topic:", topic);
     return new Response("ignored", { status: 200 });
   }
 
   try {
+
     const customer = payload.customer;
+
     if (!customer) {
+      console.log("⚠ Order has no customer");
       return new Response("no_customer", { status: 200 });
     }
 
-    const VIP_PRODUCT_ID = process.env.VIP_PRODUCT_ID;
+    console.log("Customer ID:", customer.id);
+
+    /* ============================
+       Fetch VIP variant metafield
+    ============================ */
+
+    console.log("Fetching VIP metafield");
+
+    const metafieldResponse = await admin.graphql(`
+      {
+        shop {
+          metafield(namespace: "vip", key: "pass_variant_id") {
+            value
+          }
+        }
+      }
+    `);
+
+    const metafieldData = await metafieldResponse.json();
+
+    const vipVariantGid =
+      metafieldData?.data?.shop?.metafield?.value;
+
+    if (!vipVariantGid) {
+      console.error("VIP metafield missing");
+      return new Response("vip_metafield_missing", { status: 200 });
+    }
+
+    const VIP_VARIANT_ID = vipVariantGid.split("/").pop();
+
+    console.log("VIP Variant ID:", VIP_VARIANT_ID);
+
+    /* ============================
+       Check if VIP purchased
+    ============================ */
 
     const hasVIPMembership = payload.line_items?.some(
-      (item) => String(item.product_id) === String(VIP_PRODUCT_ID)
+      (item) => String(item.variant_id) === String(VIP_VARIANT_ID)
     );
 
+    console.log("VIP Membership purchased:", hasVIPMembership);
+
     if (!hasVIPMembership) {
+      console.log("Not a VIP order");
       return new Response("not_vip_order", { status: 200 });
     }
 
+    /* ============================
+       Connect DB
+    ============================ */
+
     const db = await connectToDatabase();
+
     const vipCollection = db.collection("vip_members");
     const couponsCollection = db.collection("coupons");
+
+    console.log("MongoDB connected");
+
+    const now = new Date();
 
     const existingVIP = await vipCollection.findOne({
       shop,
       shopifyCustomerId: String(customer.id),
     });
 
-    const now = new Date();
+    console.log("Existing VIP:", existingVIP);
 
-    // 🔒 RENEW IF EXPIRED
+    /* ============================
+       VIP membership logic
+    ============================ */
+
     if (existingVIP) {
+
       if (now < new Date(existingVIP.membershipEndDate)) {
+        console.log("VIP already active");
         return new Response("already_active_vip", { status: 200 });
       }
 
-      // expired → renew
+      console.log("Renewing VIP membership");
+
       await vipCollection.updateOne(
         { _id: existingVIP._id },
         {
@@ -71,8 +128,11 @@ export const action = async ({ request }) => {
           },
         }
       );
+
     } else {
-      // create new VIP record
+
+      console.log("Creating new VIP member");
+
       await vipCollection.insertOne({
         shop,
         shopifyCustomerId: String(customer.id),
@@ -83,13 +143,15 @@ export const action = async ({ request }) => {
         createdAt: new Date(),
       });
 
-      console.log("🔥 ORDERS_PAID WEBHOOK TRIGGERED");
-      console.log("Shop:", shop);
-      console.log("Customer:", payload.customer?.id);
     }
 
-    // 🏷 Tag Customer
-    const tagResponse = await admin.graphql(`
+    /* ============================
+       Tag Customer
+    ============================ */
+
+    console.log("Tagging customer VIP");
+
+    await admin.graphql(`
       mutation {
         customerUpdate(input: {
           id: "gid://shopify/Customer/${customer.id}",
@@ -101,53 +163,61 @@ export const action = async ({ request }) => {
       }
     `);
 
-    const tagData = await tagResponse.json();
-    if (tagData.errors) {
-      console.error("Tag error:", tagData.errors);
-    }
+    console.log("Customer tagged");
 
-    // 🎟 Create Price Rule
-    const priceRuleResponse = await admin.graphql(`
-      mutation {
-        priceRuleCreate(
-          priceRule: {
-            title: "VIP $10 Discount"
-            targetType: LINE_ITEM
-            targetSelection: ALL
-            allocationMethod: ACROSS
-            valueType: FIXED_AMOUNT
-            value: "-10.0"
-            customerSelection: {
-              customers: ["gid://shopify/Customer/${customer.id}"]
-            }
-            oncePerCustomer: true
-            usageLimit: 1
-          }
-        ) {
-          priceRule { id }
-          userErrors { message }
-        }
+    /* ============================
+       Read coupons from order
+    ============================ */
+
+    console.log("Reading cart attributes");
+
+    const attributes = payload.note_attributes || [];
+
+    const couponAttr = attributes.find(
+      attr => attr.name === "vip_coupons"
+    );
+
+    let coupons = [];
+
+    if (couponAttr) {
+
+      try {
+
+        coupons = JSON.parse(couponAttr.value);
+
+        console.log("Coupons from cart:", coupons);
+
+      } catch (err) {
+
+        console.error("Coupon parsing failed", err);
+
       }
-    `);
 
-    const priceRuleData = await priceRuleResponse.json();
-
-    if (priceRuleData.errors || priceRuleData.data.priceRuleCreate.userErrors.length) {
-      console.error("Price rule error:", priceRuleData);
-      return new Response("price_rule_failed", { status: 200 });
     }
 
-    const priceRuleId =
-      priceRuleData.data.priceRuleCreate.priceRule.id;
+    if (!coupons.length) {
+      console.log("No coupons found in order");
+      return new Response("no_coupons", { status: 200 });
+    }
 
-    // 🎁 Generate 3 Discount Codes
-    for (let i = 0; i < 3; i++) {
-      const code = generateCode();
+    /* ============================
+       Create Shopify discount codes
+    ============================ */
+
+    const PRICE_RULE_ID = process.env.VIP_COUPON_PRICE_RULE_ID;
+
+    console.log("Creating discount codes");
+
+    for (let i = 0; i < coupons.length; i++) {
+
+      const code = coupons[i];
+
+      console.log("Creating Shopify discount:", code);
 
       const discountResponse = await admin.graphql(`
         mutation {
           discountCodeCreate(
-            priceRuleId: "${priceRuleId}",
+            priceRuleId: "${PRICE_RULE_ID}",
             discountCode: { code: "${code}" }
           ) {
             discountCode { id }
@@ -158,27 +228,39 @@ export const action = async ({ request }) => {
 
       const discountData = await discountResponse.json();
 
-      if (discountData.errors) {
-        console.error("Discount error:", discountData.errors);
-        continue;
-      }
+      console.log("Discount API result:", discountData);
+
+      /* Save to Mongo */
 
       await couponsCollection.insertOne({
+
         shop,
+        customerId: String(customer.id),
         couponCode: code,
         value: 10,
-        isUsed: false,
-        usedByCustomerId: String(customer.id),
-        usedOnOrderId: null,
-        createdAt: new Date(),
+
+        isUsed: i === 0,   // first coupon already used
+
+        usedOnOrderId:
+          i === 0 ? payload.id : null,
+
+        createdAt: new Date()
+
       });
+
+      console.log("Coupon stored:", code);
+
     }
 
-    console.log("✅ VIP activated safely");
+    console.log("VIP activated + coupons saved");
 
     return new Response("success", { status: 200 });
+
   } catch (error) {
+
     console.error("Webhook Error:", error);
+
     return new Response("failed", { status: 500 });
+
   }
 };

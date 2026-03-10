@@ -23,6 +23,7 @@ const shopify = shopifyApp({
   hooks: {
     afterAuth: async ({ session, admin }) => {
 
+
       console.log("🔥 afterAuth triggered for:", session.shop);
 
       await upsertShop(session);
@@ -84,7 +85,32 @@ const shopify = shopifyApp({
       deliveryMethod: "http",
       callbackUrl: "/webhooks/orders_create",
     },
-    
+
+    ORDERS_UPDATED: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/orders_updated",
+    },
+
+    ORDERS_PAID: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/orders/paid",
+    },
+
+    CUSTOMERS_CREATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/customers/create",
+    },
+
+    CUSTOMERS_UPDATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/customers/update",
+    },
+
+    APP_SCOPES_UPDATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/app/scopes_update",
+    },
+
     APP_UNINSTALLED: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/app_uninstalled",
