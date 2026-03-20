@@ -1,10 +1,15 @@
 import { authenticate } from "../shopify.server";
 import { updateCustomer, getCustomerByShopifyId, createCustomer } from "../models/Customer.server";
+<<<<<<< HEAD
+=======
+import { getVipPasses } from "../models/VipPass.server";
+>>>>>>> origin/sparsh-safe
 
 export const action = async ({ request }) => {
 
   console.log("🔥 orders/paid webhook triggered");
 
+<<<<<<< HEAD
   const { shop, payload, admin } = await authenticate.webhook(request);
 
   // ---------------- GET VIP VARIANT ID FROM METAFIELD ----------------
@@ -45,6 +50,30 @@ export const action = async ({ request }) => {
 
   const hasVipProduct = payload.line_items.some(
     (item) => item.variant_id?.toString() === VIP_VARIANT_ID.toString()
+=======
+  const { shop, payload } = await authenticate.webhook(request);
+
+  // ---------------- GET VIP PASS FROM DB ----------------
+
+  const vipPasses = await getVipPasses(shop);
+  const vipPass = vipPasses.find((pass) => pass.is_active === true);
+
+  if (!vipPass) {
+    console.log("❌ No VIP pass configured");
+    return new Response("No VIP pass", { status: 200 });
+  }
+
+
+  const vipProductId = parseInt(
+    vipPass.shopify_product_id.replace("gid://shopify/Product/", "")
+  );
+
+
+  // ---------------- CHECK ORDER ITEMS ----------------
+
+  const hasVipProduct = payload.line_items.some(
+    (item) => item.product_id === vipProductId
+>>>>>>> origin/sparsh-safe
   );
 
   if (!hasVipProduct) {
@@ -65,6 +94,7 @@ export const action = async ({ request }) => {
   }
 
 
+<<<<<<< HEAD
   // ---------------- GET MEMBERSHIP DURATION FROM METAFIELD ----------------
 
   let durationMonths;
@@ -89,11 +119,18 @@ export const action = async ({ request }) => {
     durationMonths = 1; // Default fallback
   }
 
+=======
+>>>>>>> origin/sparsh-safe
   // ---------------- MEMBERSHIP DATES ----------------
 
   const startDate = new Date();
   const endDate = new Date();
+<<<<<<< HEAD
   endDate.setMonth(endDate.getMonth() + durationMonths);
+=======
+
+  endDate.setMonth(endDate.getMonth() + vipPass.duration_months);
+>>>>>>> origin/sparsh-safe
 
 
   // ---------------- UPDATE CUSTOMER ----------------

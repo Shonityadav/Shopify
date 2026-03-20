@@ -8,11 +8,19 @@ import {
 } from "@shopify/polaris";
 
 import { useState } from "react";
+<<<<<<< HEAD
 import { Form, useActionData } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { connectToDatabase } from "../mongodb.server";
 import { createVipPass } from "../models/VipPass.server";
+=======
+import { Form, useActionData, redirect } from "react-router";
+
+import { authenticate } from "../shopify.server";
+import { connectToDatabase } from "../mongodb.server";
+import { createVipPass, deactivateVipPasses } from "../models/VipPass.server";
+>>>>>>> origin/sparsh-safe
 
 
 // ---------------- ACTION ----------------
@@ -201,7 +209,13 @@ export const action = async ({ request }) => {
       }
     `);
 
+<<<<<<< HEAD
 
+=======
+    // ---------------- DEACTIVATE OLD PASSES ----------------
+
+    await deactivateVipPasses(session.shop);
+>>>>>>> origin/sparsh-safe
     // ---------------- SAVE TO MONGODB ----------------
 
     await createVipPass({
@@ -213,6 +227,7 @@ export const action = async ({ request }) => {
       price,
       shopify_product_id: productId,
       shopify_variant_id: variantId,
+<<<<<<< HEAD
     });
 
 
@@ -220,6 +235,13 @@ export const action = async ({ request }) => {
       success: true,
       productId
     };
+=======
+      is_active: true
+    });
+
+
+    return redirect("/app/passes?created=true");
+>>>>>>> origin/sparsh-safe
 
   } catch (error) {
 

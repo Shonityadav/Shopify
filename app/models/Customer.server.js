@@ -18,6 +18,7 @@ export async function createCustomer(data) {
   });
 }
 
+<<<<<<< HEAD
 export async function getCustomers(store) {
   const db = await connectToDatabase();
   return db.collection("customers").find({ store }).toArray();
@@ -46,4 +47,71 @@ export async function updateCustomer(store, shopify_customer_id, data) {
       },
     }
   );
+=======
+
+export async function getCustomers(store) {
+  const db = await connectToDatabase();
+
+  return db
+    .collection("customers")
+    .find({ store })
+    .sort({ createdAt: -1 })
+    .toArray();
+}
+
+
+export async function getCustomerByShopifyId(store, shopify_customer_id) {
+  const db = await connectToDatabase();
+
+  return db.collection("customers").findOne({
+    store,
+    shopify_customer_id: Number(shopify_customer_id),
+  });
+}
+
+
+export async function updateCustomer(store, shopify_customer_id, data) {
+  const db = await connectToDatabase();
+
+  // 🔧 IMPORTANT FIX
+  const customerId = Number(shopify_customer_id);
+
+  console.log("Updating customer in MongoDB:", {
+    store,
+    shopify_customer_id: customerId,
+    data,
+  });
+
+  const updateFields = {};
+
+  if (data.email !== undefined) updateFields.email = data.email;
+  if (data.first_name !== undefined) updateFields.first_name = data.first_name;
+  if (data.last_name !== undefined) updateFields.last_name = data.last_name;
+  if (data.is_vip !== undefined) updateFields.is_vip = data.is_vip;
+  if (data.membership_start_date !== undefined)
+    updateFields.membership_start_date = data.membership_start_date;
+  if (data.membership_end_date !== undefined)
+    updateFields.membership_end_date = data.membership_end_date;
+  if (data.coupons_remaining !== undefined)
+    updateFields.coupons_remaining = data.coupons_remaining;
+
+  updateFields.updatedAt = new Date();
+
+  const result = await db.collection("customers").updateOne(
+    {
+      store,
+      shopify_customer_id: customerId,
+    },
+    {
+      $set: updateFields,
+    },
+    {
+      upsert: true,
+    }
+  );
+
+  console.log("MongoDB update result:", result);
+
+  return result;
+>>>>>>> origin/sparsh-safe
 }
