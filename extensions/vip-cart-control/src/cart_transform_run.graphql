@@ -1,0 +1,19 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      merchandise {
+        ... on ProductVariant {
+          id
+        }
+      }
+    }
+  }
+
+  shop {
+    metafield(namespace: "vip", key: "pass_variant_id") {
+      value
+    }
+  }
+}

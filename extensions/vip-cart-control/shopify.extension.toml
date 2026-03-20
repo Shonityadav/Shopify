@@ -1,0 +1,17 @@
+api_version = "2026-01"
+
+[[extensions]]
+name = "t:name"
+handle = "vip-cart-control"
+type = "function"
+uid = "eec02859-4ab3-814c-ae33-b56bde341353f56b89e4"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "cart.transform.run"
+  input_query = "src/cart_transform_run.graphql"
+  export = "cart-transform-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

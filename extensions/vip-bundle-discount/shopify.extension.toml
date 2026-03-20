@@ -1,0 +1,20 @@
+api_version = "2026-01"
+
+[[extensions]]
+name = "VIP bundle discount"
+handle = "vip-bundle-discount"
+type = "function"
+uid = "c5d1dec9-b4a6-ced5-d57a-6dc93f662349194f19f2"
+description = "Apply VIP pricing logic to eligible cart items"
+
+
+  [[extensions.targeting]]
+  target = "purchase.product-discount.run"
+  input_query = "src/run.graphql"
+  export = "run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
+
+  
