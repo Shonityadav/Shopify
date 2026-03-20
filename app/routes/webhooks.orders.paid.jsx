@@ -1,33 +1,50 @@
 import { authenticate } from "../shopify.server";
 import { updateCustomer, getCustomerByShopifyId, createCustomer } from "../models/Customer.server";
-import { getVipPasses } from "../models/VipPass.server";
 
 export const action = async ({ request }) => {
 
   console.log("🔥 orders/paid webhook triggered");
 
-  const { shop, payload } = await authenticate.webhook(request);
+  const { shop, payload, admin } = await authenticate.webhook(request);
 
-  // ---------------- GET VIP PASS FROM DB ----------------
+  // ---------------- GET VIP VARIANT ID FROM METAFIELD ----------------
 
-  const vipPasses = await getVipPasses(shop);
-  const vipPass = vipPasses.find((pass) => pass.is_active === true);
+  let VIP_VARIANT_ID;
 
-  if (!vipPass) {
-    console.log("❌ No VIP pass configured");
-    return new Response("No VIP pass", { status: 200 });
+  try {
+    const response = await admin.graphql(`
+      {
+        shop {
+          metafield(namespace: "vip", key: "pass_variant_id") {
+            value
+          }
+        }
+      }
+    `);
+
+    const data = await response.json();
+    const vipVariantGid = data.data?.shop?.metafield?.value;
+
+    VIP_VARIANT_ID = vipVariantGid
+      ? vipVariantGid.split("/").pop()
+      : null;
+
+    if (!VIP_VARIANT_ID) {
+      console.log("❌ No VIP variant ID found in metafield");
+      return new Response("No VIP variant configured", { status: 200 });
+    }
+
+    console.log("✅ VIP Variant ID:", VIP_VARIANT_ID);
+  } catch (error) {
+    console.error("❌ Error fetching VIP variant metafield:", error);
+    return new Response("Error fetching VIP configuration", { status: 500 });
   }
-
-
-  const vipProductId = parseInt(
-    vipPass.shopify_product_id.replace("gid://shopify/Product/", "")
-  );
 
 
   // ---------------- CHECK ORDER ITEMS ----------------
 
   const hasVipProduct = payload.line_items.some(
-    (item) => item.product_id === vipProductId
+    (item) => item.variant_id?.toString() === VIP_VARIANT_ID.toString()
   );
 
   if (!hasVipProduct) {
@@ -48,12 +65,35 @@ export const action = async ({ request }) => {
   }
 
 
+  // ---------------- GET MEMBERSHIP DURATION FROM METAFIELD ----------------
+
+  let durationMonths;
+
+  try {
+    const durationResponse = await admin.graphql(`
+      {
+        shop {
+          metafield(namespace: "vip", key: "duration_months") {
+            value
+          }
+        }
+      }
+    `);
+
+    const durationData = await durationResponse.json();
+    durationMonths = parseInt(durationData.data?.shop?.metafield?.value) || 1;
+
+    console.log("✅ Membership duration:", durationMonths, "months");
+  } catch (error) {
+    console.error("❌ Error fetching duration metafield:", error);
+    durationMonths = 1; // Default fallback
+  }
+
   // ---------------- MEMBERSHIP DATES ----------------
 
   const startDate = new Date();
   const endDate = new Date();
-
-  endDate.setMonth(endDate.getMonth() + vipPass.duration_months);
+  endDate.setMonth(endDate.getMonth() + durationMonths);
 
 
   // ---------------- UPDATE CUSTOMER ----------------
