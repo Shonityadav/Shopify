@@ -1,4 +1,4 @@
-{% if shop.metafields.vip.pass_variant_id %}
+{% assign subscribe_plan = shop.metafields['app--326294798337--vip'].subscribe_plan_id.value %}
 
 {% if template.name == 'product' %}
 
@@ -8,12 +8,24 @@
 
 <div class="vip-purchase-options">
 
-<fieldset class="product-form__input">
-<legend class="form__label">Choose Purchase Option</legend>
-
+<!-- Main Purchase Type (Radio Buttons - mutually exclusive) -->
+<fieldset class="product-form__input main-options">
+<legend class="form__label">Choose Purchase Type</legend>
 
 <label class="vip-option">
-  <input type="radio" name="purchase_option" value="vip" checked>
+  <input type="radio" name="purchase_type" value="regular" checked>
+
+  <div class="vip-option-content">
+    <div class="vip-option-title">Buy one time</div>
+  </div>
+
+  <div class="vip-option-price">
+    {{ base_price | money }}
+  </div>
+</label>
+
+<label class="vip-option">
+  <input type="radio" name="purchase_type" value="vip">
 
   <div class="vip-option-content">
     <div class="vip-option-title">VIP Club Membership</div>
@@ -30,10 +42,15 @@
   </div>
 </label>
 
+</fieldset>
 
+{% if subscribe_plan != blank %}
+<!-- Subscription Option (Checkbox - can combine with above) -->
+<fieldset class="product-form__input subscription-option">
+<legend class="form__label">Additional Options</legend>
 
-<label class="vip-option">
-  <input type="radio" name="purchase_option" value="subscribe">
+<label class="vip-option subscribe-option">
+  <input type="checkbox" name="purchase_option" value="subscribe">
 
   <div class="vip-option-content">
     <div class="vip-option-title">Subscribe and Save</div>
@@ -41,38 +58,38 @@
     <div class="vip-option-desc">
       ✓ Free SCI Travel Packs<br>
       ✓ Easily edit, skip or cancel anytime<br>
-      ✓ 0-Day Money Back Guarantee
+      ✓ 0-Day Money Back Guarantee<br>
+      <small style="color:#888;">Add to your purchase type above for 20% savings</small>
     </div>
   </div>
 
   <div class="vip-option-price">
-    {{ subscribe_price | money }}
-  </div>
-</label>
-
-
-
-<label class="vip-option">
-  <input type="radio" name="purchase_option" value="regular" >
-
-  <div class="vip-option-content">
-    <div class="vip-option-title">Buy one time</div>
-  </div>
-
-  <div class="vip-option-price">
-    {{ base_price | money }}
+    <span class="subscribe-discount">20% OFF</span>
   </div>
 </label>
 
 </fieldset>
-
+{% endif %}
 </div>
 
 
 <style>
 
+
+
 .vip-purchase-options{
 margin-top:20px;
+}
+
+.main-options {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.subscription-option legend {
+  color: #39c6c6;
+  font-weight: 600;
 }
 
 .vip-option{
@@ -84,6 +101,7 @@ border-radius:12px;
 padding:16px;
 margin-bottom:12px;
 cursor:pointer;
+transition: all 0.2s ease;
 }
 
 .vip-option input{
@@ -109,13 +127,51 @@ font-weight:600;
 white-space:nowrap;
 }
 
-.vip-option:has(input:checked){
-border:2px solid #39c6c6;
+.subscribe-discount{
+color:#39c6c6;
+font-weight:700;
+}
+
+.subscribe-option{
+border:2px dashed #39c6c6 !important;
+background:#f8fffe;
+}
+
+.main-options .vip-option:has(input[type="radio"]:checked){
+  border:2px solid #39c6c6 !important;
+  background:#f8fffe;
+  box-shadow: 0 0 0 2px rgba(57, 198, 198, 0.2);
+}
+
+.subscription-option .vip-option:has(input[type="checkbox"]:checked) .subscribe-discount{
+  color:#fff;
+}
+
+/* Enhanced visual feedback for combinations */
+.vip-purchase-options.with-subscription .subscribe-option {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 2px rgba(57, 198, 198, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(57, 198, 198, 0.2); }
+  100% { box-shadow: 0 0 0 2px rgba(57, 198, 198, 0.4); }
+}
+
+/* Hide Shopify native purchase options */
+.shopify-payment-terms,
+.product-form__input input[name="selling_plan"],
+.product-form__input input[name="selling_plan"] + label,
+.product-form__selling-plan-group,
+.product__selling-plan-group,
+[data-product-purchase-options],
+[data-selling-plan-group]{
+  display:none !important;
 }
 
 </style>
 
-{% endif %}
+
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
@@ -125,6 +181,95 @@ document.addEventListener("DOMContentLoaded", function(){
   if(price){
     price.closest('.price').style.display = "none";
   }
+
+  // --- variant swap helpers ---
+  const purchaseTypeRadios = document.querySelectorAll('input[name="purchase_type"]');
+  const subscribeCheckbox = document.querySelector('input[name="purchase_option"][value="subscribe"]');
+  console.log(subscribeCheckbox,"[VIP DEBUG] Purchase options script loaded");
+
+  // product form / variant input
+  const productForm = document.querySelector('form[action^="/cart/add"]');
+  const variantInput = productForm?.querySelector('[name="id"]');
+
+  if(!productForm){
+    console.warn("[VIP DEBUG] Product form not found");
+    return;
+  }
+  // Create selling plan input
+  const subscribePlanId = "{{ subscribe_plan | split: '/' | last }}";
+  console.log("[VIP DEBUG] Subscribe plan metafield:", subscribePlanId);
+  let sellingPlanInput = productForm.querySelector('[name="selling_plan"]');
+
+  if(!subscribePlanId){
+    const subscribeOption = document.querySelector('.subscription-option');
+    if(subscribeOption){
+      subscribeOption.remove();
+    }
+  }
+
+  if(!sellingPlanInput){
+
+    sellingPlanInput = document.createElement("input");
+    sellingPlanInput.type = "hidden";
+    sellingPlanInput.name = "selling_plan";
+
+    productForm.appendChild(sellingPlanInput);
+
+    console.log("[VIP DEBUG] selling_plan input created");
+
+  }
+
+
+  const originalVariantId = variantInput ? variantInput.value : null;
+
+  // VIP variant ID pulled from shop metafield
+  const vipVariantId = {{ shop.metafields.vip.pass_variant_id.value | split: '/' | last | default: 0 }};
+
+  
+
+  function updateVisualFeedback() {
+    const optionsContainer = document.querySelector('.vip-purchase-options');
+    if(!optionsContainer) return;
+
+    // Remove all combination classes
+    optionsContainer.classList.remove('with-subscription', 'regular-selected', 'vip-selected');
+
+    const selectedType = document.querySelector('input[name="purchase_type"]:checked')?.value;
+
+    if (selectedType === 'regular') {
+      optionsContainer.classList.add('regular-selected');
+    } else if (selectedType === 'vip') {
+      optionsContainer.classList.add('vip-selected');
+    }
+
+    if (subscribeCheckbox?.checked) {
+      optionsContainer.classList.add('with-subscription');
+      console.log("[VIP DEBUG] Subscribe enabled → selling plan:",sellingPlanInput, subscribePlanId);
+      if (sellingPlanInput && subscribePlanId) {
+        sellingPlanInput.value = subscribePlanId;
+        console.log("[VIP DEBUG] Subscribe enabled → selling plan:", subscribePlanId);
+      }
+
+    } else {
+
+      if (sellingPlanInput) {
+        sellingPlanInput.value = "";
+        console.log("[VIP DEBUG] Subscribe disabled");
+      }
+
+    }
+  }
+
+  
+
+  purchaseTypeRadios.forEach(radio => {
+    radio.addEventListener('change', updateVisualFeedback);
+  });
+
+  subscribeCheckbox?.addEventListener('change', updateVisualFeedback);
+
+  // initialize visual state and variant
+  updateVisualFeedback();
 
 });
 </script>

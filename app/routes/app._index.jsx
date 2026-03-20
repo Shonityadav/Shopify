@@ -3,7 +3,8 @@ import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-// import { validateShopActive, upsertShop } from "../shop.server";
+import { upsertShop } from "../shop.server";
+import { registerWebhooks } from "../shopify.server";
 
 
 
@@ -13,7 +14,30 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const actionType = formData.get("action");
+
+  // Handle webhook registration
+  if (actionType === "register_webhooks") {
+    try {
+      console.log("🔥 Manual webhook registration triggered");
+      console.log("🔥 Session shop:", session?.shop);
+
+      await upsertShop(session);
+      console.log("✅ Shop upserted manually");
+
+      await registerWebhooks({ session });
+      console.log("✅ Webhooks registered manually");
+
+      return { success: true, message: "Webhooks registered successfully!" };
+    } catch (error) {
+      console.error("❌ Webhook registration failed:", error);
+      return { error: true, message: "Failed to register webhooks: " + error.message };
+    }
+  }
+
+  // Handle product creation (existing logic)
   const color = ["Red", "Orange", "Yellow", "Green"][
     Math.floor(Math.random() * 4)
   ];
@@ -139,13 +163,25 @@ export default function Index() {
     if (fetcher.data?.product?.id) {
       shopify.toast.show("Product created");
     }
-  }, [fetcher.data?.product?.id, shopify]);
+    if (fetcher.data?.success) {
+      shopify.toast.show(fetcher.data.message);
+    }
+    if (fetcher.data?.error) {
+      shopify.toast.show(fetcher.data.message, { isError: true });
+    }
+  }, [fetcher.data, shopify]);
+
   const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const registerWebhooks = () => fetcher.submit({ action: "register_webhooks" }, { method: "POST" });
 
   return (
     <s-page heading="Shopify app template">
       <s-button slot="primary-action" onClick={generateProduct}>
         Generate a product
+      </s-button>
+
+      <s-button onClick={registerWebhooks} variant="secondary">
+        Register Webhooks
       </s-button>
 
       <s-section heading="Congrats on creating a new Shopify app 🎉">

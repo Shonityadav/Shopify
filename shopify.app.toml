@@ -11,39 +11,37 @@ automatically_update_urls_on_dev = true
 [webhooks]
 api_version = "2026-04"
 
-[[webhooks.subscriptions]]
-topics = [ "app/uninstalled" ]
-uri = "/webhooks/app_uninstalled"
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app_uninstalled"
 
-[[webhooks.subscriptions]]
-topics = [ "orders/create" ]
-uri = "/webhooks/orders_create"
+  [[webhooks.subscriptions]]
+  topics = [ "customers/create" ]
+  uri = "/webhooks/customers/create"
 
-[[webhooks.subscriptions]]
-topics = ["orders/updated"]
-uri = "/webhooks/orders_updated"
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app.scopes_update"
 
-[[webhooks.subscriptions]]
-topics = [ "app/scopes_update" ]
-uri = "/webhooks/app/scopes_update"
+  [[webhooks.subscriptions]]
+  topics = [ "orders/paid" ]
+  uri = "/webhooks/orders/paid"
 
-[[webhooks.subscriptions]]
-topics = [ "customers/update" ]
-uri = "/webhooks/customers/update"
+  [[webhooks.subscriptions]]
+  topics = [ "customers/update" ]
+  uri = "/webhooks/customers/update"
 
-[[webhooks.subscriptions]]
-topics = [ "customers/create" ]
-uri = "/webhooks/customers/create"
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders_create"
 
-[[webhooks.subscriptions]]
-topics = ["orders/paid"]
-uri = "/webhooks/orders/paid"
-
-
+  [[webhooks.subscriptions]]
+  topics = [ "orders/updated" ]
+  uri = "/webhooks/orders_updated"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,read_orders,read_cart_transforms,write_cart_transforms,read_products,write_discounts,write_metaobject_definitions,write_orders,write_products,read_publications,write_publications,write_purchase_options,read_purchase_options"
+scopes = "read_cart_transforms,read_customers,read_orders,read_own_subscription_contracts,read_products,read_publications,read_purchase_options,write_cart_transforms,write_discounts,write_metaobject_definitions,write_orders,write_products,write_publications,write_purchase_options"
 
 [auth]
 redirect_urls = [
@@ -77,3 +75,19 @@ required = true
 [metaobjects.app.example.fields.description]
 name = "Description"
 type = "multi_line_text_field"
+
+[shop.metafields.vip.pass_variant_id]
+type = "single_line_text_field"
+name = "VIP Membership Variant GID"
+description = "Variant GID for VIP membership product (e.g. gid://shopify/ProductVariant/123)"
+
+  [shop.metafields.vip.pass_variant_id.access]
+  admin = "merchant_read_write"
+
+[shop.metafields.vip.subscribe_plan_id]
+type = "single_line_text_field"
+name = "Subscribe & Save Selling Plan GID"
+description = "Selling plan GID for Subscribe & Save (e.g. gid://shopify/SellingPlan/123)"
+
+  [shop.metafields.vip.subscribe_plan_id.access]
+  admin = "merchant_read_write"
