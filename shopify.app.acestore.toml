@@ -1,12 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "c775dd273743c8764b398ccc5b2e0f1a"
-name = "integrated-sale-app"
-application_url = "https://combinations-moon-state-translated.trycloudflare.com"
+client_id = "98023666c814430856052792c73cba5a"
+name = "AceStore"
+application_url = "https://practitioners-territories-pts-gone.trycloudflare.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+
 
 [webhooks]
 api_version = "2026-04"
@@ -41,11 +42,13 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "customer_read_customers,read_cart_transforms,read_product_listings,read_customers,read_orders,read_own_subscription_contracts,read_products,read_publications,read_purchase_options,write_cart_transforms,write_customers,write_discounts,write_metaobject_definitions,write_orders,write_own_subscription_contracts,write_products,write_publications,write_purchase_options"
+scopes = "read_cart_transforms,write_cart_transforms,read_customers,write_customers,read_discounts,write_discounts,read_metaobject_definitions,write_metaobject_definitions,read_orders,write_orders,read_products,write_products,read_publications,write_publications,read_purchase_options,write_purchase_options,customer_write_customers,customer_read_customers"
+optional_scopes = [ ]
+use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://combinations-moon-state-translated.trycloudflare.com/auth/callback"
+  "https://practitioners-territories-pts-gone.trycloudflare.com/auth/callback"
 ]
 
 [[extensions]]
@@ -94,6 +97,6 @@ description = "Selling plan GID for Subscribe & Save (e.g. gid://shopify/Selling
 
 
 [app_proxy]
-url = "https://combinations-moon-state-translated.trycloudflare.com"
+url = "https://practitioners-territories-pts-gone.trycloudflare.com"
 subpath = "integrated-sale-app"
 prefix = "apps"

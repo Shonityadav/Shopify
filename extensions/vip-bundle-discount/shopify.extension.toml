@@ -17,4 +17,9 @@ description = "Apply VIP pricing logic to eligible cart items"
   command = ""
   path = "dist/function.wasm"
 
+  [input.variables]
+  vip_metafield = { namespace = "vip", key = "pass_variant_id" }
+  gift_metafield = { namespace = "gift", key = "gift_variant_id" }
+
+
   

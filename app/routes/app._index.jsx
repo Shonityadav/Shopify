@@ -3,23 +3,20 @@ import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-<<<<<<< HEAD
 import { upsertShop } from "../shop.server";
 import { registerWebhooks } from "../shopify.server";
-=======
-// import { validateShopActive, upsertShop } from "../shop.server";
->>>>>>> origin/sparsh-safe
 
 
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  await upsertShop(session);
   return null;
 };
 
 export const action = async ({ request }) => {
-<<<<<<< HEAD
   const { admin, session } = await authenticate.admin(request);
+  await upsertShop(session);
   const formData = await request.formData();
   const actionType = formData.get("action");
 
@@ -43,9 +40,6 @@ export const action = async ({ request }) => {
   }
 
   // Handle product creation (existing logic)
-=======
-  const { admin } = await authenticate.admin(request);
->>>>>>> origin/sparsh-safe
   const color = ["Red", "Orange", "Yellow", "Green"][
     Math.floor(Math.random() * 4)
   ];
@@ -171,7 +165,6 @@ export default function Index() {
     if (fetcher.data?.product?.id) {
       shopify.toast.show("Product created");
     }
-<<<<<<< HEAD
     if (fetcher.data?.success) {
       shopify.toast.show(fetcher.data.message);
     }
@@ -182,10 +175,6 @@ export default function Index() {
 
   const generateProduct = () => fetcher.submit({}, { method: "POST" });
   const registerWebhooks = () => fetcher.submit({ action: "register_webhooks" }, { method: "POST" });
-=======
-  }, [fetcher.data?.product?.id, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
->>>>>>> origin/sparsh-safe
 
   return (
     <s-page heading="Shopify app template">
@@ -193,13 +182,10 @@ export default function Index() {
         Generate a product
       </s-button>
 
-<<<<<<< HEAD
       <s-button onClick={registerWebhooks} variant="secondary">
         Register Webhooks
       </s-button>
 
-=======
->>>>>>> origin/sparsh-safe
       <s-section heading="Congrats on creating a new Shopify app 🎉">
         <s-paragraph>
           This embedded app template uses{" "}

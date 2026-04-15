@@ -6,7 +6,30 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+  const search = url.search;
+
+  const sellingPlanGroupId = url.searchParams.get("sellingPlanGroupId");
+
+  // ✅ If coming from subscriptions (product page)
+  if (sellingPlanGroupId) {
+    throw new Response(null, {
+      status: 302,
+      headers: { Location: `/app/subscriptions${search}` },
+    });
+  }
+
+  // ✅ If root app load (no param) → assume discount
+  if (pathname === "/app" || pathname === "/") {
+    throw new Response(null, {
+      status: 302,
+      headers: { Location: `/app/passes${search}` },
+    });
+  }
+
   await authenticate.admin(request);
+
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
@@ -18,12 +41,10 @@ export default function App() {
       <PolarisAppProvider i18n={enTranslations}>
         <s-app-nav>
           <s-link href="/app">Home</s-link>
-          <s-link href="/app/passes">Passes</s-link>
+          <s-link href="/app/passes">Memberships</s-link>
+          <s-link href="/app/gifts">Bundle Products</s-link>
           <s-link href="/app/customers">Customers</s-link>
-<<<<<<< HEAD
-          <s-link href="/app/subscriptions">Subscriptions dashboard</s-link>
-=======
->>>>>>> origin/sparsh-safe
+          <s-link href="/app/subscriptions">Subscriptions</s-link>
           <s-link href="/app/additional">Additional page</s-link>
         </s-app-nav>
 

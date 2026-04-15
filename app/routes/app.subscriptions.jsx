@@ -1,4 +1,4 @@
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useRevalidator  } from "react-router";
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import {
@@ -7,130 +7,8 @@ import {
   archiveSellingPlan,
   createNewSellingPlan,
 } from "../services/SubscriptionService.server";
+import { Page, Card, DataTable, Button, Badge, Modal, TextField } from "@shopify/polaris";
 
-/* =====================================================
-   HELPERS
-===================================================== */
-
-// async function getAllProductIds(admin) {
-//   let hasNextPage = true;
-//   let cursor = null;
-//   const productIds = [];
-
-//   while (hasNextPage) {
-//     const res = await admin.graphql(
-//       `query ($cursor: String) {
-//         products(first: 50, after: $cursor) {
-//           edges {
-//             cursor
-//             node { id }
-//           }
-//           pageInfo { hasNextPage }
-//         }
-//       }`,
-//       { variables: { cursor } }
-//     );
-
-//     const data = await res.json();
-//     const edges = data.data.products.edges;
-
-//     edges.forEach(e => productIds.push(e.node.id));
-
-//     hasNextPage = data.data.products.pageInfo.hasNextPage;
-//     cursor = edges.length ? edges[edges.length - 1].cursor : null;
-//   }
-
-//   return productIds;
-// }
-
-// async function detachSellingPlanFromProducts(admin, groupId, productIds) {
-//   if (!productIds.length) return;
-
-//   await admin.graphql(
-//     `mutation ($id: ID!, $productIds: [ID!]!) {
-//       sellingPlanGroupRemoveProducts(id: $id, productIds: $productIds) {
-//         userErrors { field message }
-//       }
-//     }`,
-//     { variables: { id: groupId, productIds } }
-//   );
-
-//   console.log("🧹 Detached group from products");
-// }
-
-// async function setSubscribePlanMetafield(admin, planId) {
-//   const shopRes = await admin.graphql(`query { shop { id } }`);
-//   const shopData = await shopRes.json();
-//   const shopId = shopData.data.shop.id;
-
-//   await admin.graphql(
-//     `mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-//       metafieldsSet(metafields: $metafields) {
-//         userErrors { field message }
-//       }
-//     }`,
-//     {
-//       variables: {
-//         metafields: [{
-//           namespace: "$app:vip",
-//           key: "subscribe_plan_id",
-//           type: "single_line_text_field",
-//           value: planId,
-//           ownerId: shopId
-//         }]
-//       }
-//     }
-//   );
-// }
-
-// async function deleteSubscribePlanMetafield(admin) {
-//   try {
-//     const res = await admin.graphql(`
-//       query {
-//         shop {
-//           metafield(namespace: "$app:vip", key: "subscribe_plan_id") {
-//             id
-//           }
-//         }
-//       }
-//     `);
-
-//     const data = await res.json();
-//     const metafieldId = data?.data?.shop?.metafield?.id;
-
-//     if (!metafieldId) {
-//       console.log("ℹ️ No metafield found to delete");
-//       return;
-//     }
-
-//     const deleteRes = await admin.graphql(
-//       `mutation metafieldsDelete($ids: [ID!]!) {
-//         metafieldsDelete(ids: $ids) {
-//           deletedIds
-//           userErrors {
-//             field
-//             message
-//           }
-//         }
-//       }`,
-//       {
-//         variables: {
-//           ids: [metafieldId],
-//         },
-//       }
-//     );
-
-//     const deleteData = await deleteRes.json();
-
-//     if (deleteData.errors) {
-//       console.error("❌ Shopify delete error:", deleteData.errors);
-//     }
-
-//     console.log("🧹 Metafield deleted SUCCESSFULLY");
-//   } catch (err) {
-//     console.error("❌ Metafield delete crashed:", err);
-//   }
-// }
 
 /* =====================================================
    LOADER
@@ -179,7 +57,6 @@ export const loader = async ({ request }) => {
 
   for (const group of groups) {
     for (const plan of group.node.sellingPlans.edges) {
-
       let existing = await getSellingPlan(session.shop, plan.node.id);
 
       if (!existing) {
@@ -213,24 +90,20 @@ export const action = async ({ request }) => {
   const actionType = formData.get("action");
 
   try {
-
     if (actionType === "update_subscription") {
       await updateSellingPlanDuration(
         admin,
         session.shop,
         formData.get("sellingPlanId"),
-        formData.get("intervalCount")
+        formData.get("intervalCount"),
+        formData.get("name")
       );
       return { success: true };
     }
 
     if (actionType === "activate_plan") {
       const sellingPlanId = formData.get("sellingPlanId");
-
       await activateSellingPlan(admin, session.shop, sellingPlanId);
-
-      
-
       return { success: true };
     }
 
@@ -254,6 +127,114 @@ export const action = async ({ request }) => {
       return { success: true };
     }
 
+    if (actionType === "delete_plan") {
+      const sellingPlanId = formData.get("sellingPlanId");
+
+      const {
+        deleteSellingPlanRecord,
+        getSellingPlan,
+        getSellingPlansByGroup,
+        updateSellingPlanStatus,
+      } = await import("../models/Subscription.server");
+
+      const plan = await getSellingPlan(session.shop, sellingPlanId);
+      if (!plan) return { success: false };
+
+      const groupId = plan.selling_plan_group_id;
+
+      // Delete from Shopify
+      await admin.graphql(
+        `
+        mutation DeletePlan($id: ID!, $planId: ID!) {
+          sellingPlanGroupUpdate(
+            id: $id,
+            input: {
+              sellingPlansToDelete: [$planId]
+            }
+          ) {
+            userErrors { field message }
+          }
+        }
+        `,
+        {
+          variables: {
+            id: groupId,
+            planId: sellingPlanId,
+          },
+        }
+      );
+
+      // Delete from DB
+      await deleteSellingPlanRecord(session.shop, sellingPlanId);
+
+      // Handle active plan logic
+      if (plan.status === "ACTIVE") {
+        const remainingPlans = await getSellingPlansByGroup(
+          session.shop,
+          groupId
+        );
+
+        if (remainingPlans.length > 0) {
+          const newActive = remainingPlans[0];
+
+          await updateSellingPlanStatus(
+            session.shop,
+            newActive.selling_plan_id,
+            "ACTIVE"
+          );
+
+          const shopRes = await admin.graphql(`query { shop { id } }`);
+          const shopData = await shopRes.json();
+
+          await admin.graphql(
+            `
+            mutation MetafieldsSet($metafields:[MetafieldsSetInput!]!){
+              metafieldsSet(metafields:$metafields){
+                userErrors{ field message }
+              }
+            }
+            `,
+            {
+              variables: {
+                metafields: [
+                  {
+                    namespace: "$app:vip",
+                    key: "subscribe_plan_id",
+                    type: "single_line_text_field",
+                    value: newActive.selling_plan_id,
+                    ownerId: shopData.data.shop.id,
+                  },
+                ],
+              },
+            }
+          );
+        } else {
+          const shopRes = await admin.graphql(`query { shop { id } }`);
+          const shopData = await shopRes.json();
+
+          await admin.graphql(
+            `mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+              metafieldsDelete(metafields: $metafields) {
+                deletedMetafields { key }
+              }
+            }`,
+            {
+              variables: {
+                metafields: [
+                  {
+                    ownerId: shopData.data.shop.id,
+                    namespace: "$app:vip",
+                    key: "subscribe_plan_id",
+                  },
+                ],
+              },
+            }
+          );
+        }
+      }
+
+      return { success: true };
+    }
   } catch (error) {
     console.error(error);
     return { success: false };
@@ -263,11 +244,10 @@ export const action = async ({ request }) => {
 };
 
 /* =====================================================
-   UI (FULLY RESTORED)
+   UI
 ===================================================== */
 
 export default function Subscriptions() {
-
   const { subscriptions, planStatusMap } = useLoaderData();
   const fetcher = useFetcher();
 
@@ -275,19 +255,30 @@ export default function Subscriptions() {
   const [intervalCount, setIntervalCount] = useState(1);
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [newInterval, setNewInterval] = useState(1);
+  const [planName, setPlanName] = useState("");
+  const [editPlanName, setEditPlanName] = useState("");
 
   const isSubmitting =
     fetcher.state === "submitting" || fetcher.state === "loading";
 
+  
+
+  const revalidator = useRevalidator();
+
+  const [hasRevalidated, setHasRevalidated] = useState(false);
+
   useEffect(() => {
-    if (fetcher.data?.success) {
-      window.location.reload();
+    if (fetcher.data?.success && !hasRevalidated) {
+      setHasRevalidated(true);
+      revalidator.revalidate();
+      setEditingPlan(null);
     }
-  }, [fetcher.data]);
+  }, [fetcher.data, revalidator, hasRevalidated]);
 
   const openEdit = (plan) => {
     setEditingPlan(plan);
     setIntervalCount(plan.billingPolicy?.intervalCount || 1);
+    setEditPlanName(plan.name || "");
   };
 
   const updatePlan = () => {
@@ -295,23 +286,32 @@ export default function Subscriptions() {
       {
         action: "update_subscription",
         sellingPlanId: editingPlan.id,
-        intervalCount,
+        intervalCount: Number(intervalCount),
+        name: editPlanName,
       },
       { method: "POST" }
     );
     setEditingPlan(null);
   };
 
-  const activatePlan = (id) => {
+  const togglePlan = (id, isActive) => {
     fetcher.submit(
-      { action: "activate_plan", sellingPlanId: id },
+      {
+        action: isActive ? "archive_plan" : "activate_plan",
+        sellingPlanId: id,
+      },
       { method: "POST" }
     );
   };
 
-  const archivePlan = (id) => {
+  const deletePlan = (id) => {
+    if (!confirm("Are you sure you want to delete this plan?")) return;
+
     fetcher.submit(
-      { action: "archive_plan", sellingPlanId: id },
+      {
+        action: "delete_plan",
+        sellingPlanId: id,
+      },
       { method: "POST" }
     );
   };
@@ -321,8 +321,8 @@ export default function Subscriptions() {
       {
         action: "create_plan",
         groupId,
-        name: `Deliver every ${newInterval} months`,
-        intervalCount: newInterval,
+        name: planName || `Deliver every ${newInterval} months`,
+        intervalCount: Number(newInterval),
       },
       { method: "POST" }
     );
@@ -330,145 +330,138 @@ export default function Subscriptions() {
   };
 
   return (
-    <s-page heading="Subscriptions">
+    <Page
+      title="Subscriptions"
+      primaryAction={{
+        content: "Create Plan",
+        onAction: () => setCreatingPlan(true),
+      }}
+    >
+      <Card>
+        <DataTable
+          columnContentTypes={["text", "text", "text", "text", "text"]}
+          headings={[
+            "Group",
+            "Plan Name",
+            "Billing",
+            "Status",
+            "Actions",
+          ]}
+          rows={
+            subscriptions.flatMap((group) =>
+              group.node.sellingPlans.edges.map((sp) => {
+                const status = planStatusMap[sp.node.id];
 
-      <s-section heading="Subscription Plans">
+                return [
+                  group.node.name,
+                  sp.node.name,
+                  `Every ${sp.node.billingPolicy?.intervalCount} ${sp.node.billingPolicy?.interval?.toLowerCase()}`,
 
-        <s-stack direction="block" gap="base">
+                  <Badge key={`status-${sp.node.id}`} tone={status === "ACTIVE" ? "success" : "critical"}>
+                    {status}
+                  </Badge>,
 
-          {subscriptions.map((group) => (
+                  <div key={`actions-${sp.node.id}`} style={{ display: "flex", gap: "8px" }}>
+                    <Button
+                      size="slim"
+                      disabled={isSubmitting || status === "ARCHIVED"}
+                      onClick={() => openEdit(sp.node)}
+                    >
+                      Edit
+                    </Button>
 
-            <s-box key={group.node.id} padding="base" borderWidth="base" borderRadius="base">
+                    <Button
+                      size="slim"
+                      tone={status === "ACTIVE" ? "critical" : "success"}
+                      disabled={isSubmitting}
+                      onClick={() => togglePlan(sp.node.id, status === "ACTIVE")}
+                    >
+                      {status === "ACTIVE" ? "Deactivate" : "Activate"}
+                    </Button>
 
-              <s-stack direction="inline" align="center" gap="base">
+                    <Button
+                      size="slim"
+                      tone="critical"
+                      disabled={isSubmitting}
+                      onClick={() => deletePlan(sp.node.id)}
+                    >
+                      Delete
+                    </Button>
+                  </div>,
+                ];
+              })
+            )
+          }
+        />
+      </Card>
 
-                <s-heading>{group.node.name}</s-heading>
-
-                <s-button
-                  variant="primary"
-                  size="slim"
-                  disabled={isSubmitting}
-                  onClick={() => setCreatingPlan(true)}
-                >
-                  Create Plan
-                </s-button>
-
-              </s-stack>
-
-              <s-paragraph>
-                {group.node.description || "No description"}
-              </s-paragraph>
-
-              <s-stack direction="block" gap="small">
-
-                {group.node.sellingPlans.edges.map((sp) => {
-
-                  const status = planStatusMap[sp.node.id];
-
-                  return (
-
-                    <s-box key={sp.node.id} padding="small" borderWidth="base" borderRadius="base" background="subdued">
-
-                      <s-stack direction="inline" gap="base" align="center">
-
-                        <s-text>
-                          {sp.node.name} — Deliver every {sp.node.billingPolicy?.intervalCount} {sp.node.billingPolicy?.interval?.toLowerCase()}
-                        </s-text>
-
-                        <s-badge tone={status === "ACTIVE" ? "success" : "critical"}>
-                          {status}
-                        </s-badge>
-
-                        <s-button
-                          size="slim"
-                          disabled={isSubmitting || status === "ARCHIVED"}
-                          onClick={() => openEdit(sp.node)}
-                        >
-                          Edit
-                        </s-button>
-
-                        <s-button
-                          size="slim"
-                          disabled={isSubmitting || status === "ACTIVE"}
-                          onClick={() => activatePlan(sp.node.id)}
-                        >
-                          Activate
-                        </s-button>
-
-                        <s-button
-                          size="slim"
-                          variant="secondary"
-                          disabled={isSubmitting || status === "ARCHIVED"}
-                          onClick={() => archivePlan(sp.node.id)}
-                        >
-                          Archive
-                        </s-button>
-
-                      </s-stack>
-
-                    </s-box>
-
-                  );
-                })}
-
-              </s-stack>
-
-            </s-box>
-
-          ))}
-
-        </s-stack>
-
-      </s-section>
-
-      {/* EDIT */}
       {editingPlan && (
-        <s-section heading="Edit Delivery Duration">
-          <s-box padding="base" borderWidth="base" borderRadius="base">
+        <Modal
+          open={true}
+          onClose={() => setEditingPlan(null)}
+          title="Edit Plan"
+          primaryAction={{
+            content: "Save",
+            onAction: updatePlan,
+            loading: isSubmitting,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setEditingPlan(null),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <TextField
+              label="Plan Name"
+              value={editPlanName}
+              onChange={(value) => setEditPlanName(value)}
+            />
 
-            <s-text-field
+            <TextField
               label="Deliver every (months)"
+              type="number"
               value={intervalCount}
-              onChange={(e) => setIntervalCount(e.target.value)}
+              onChange={(value) => setIntervalCount(value)}
             />
-
-            <s-stack direction="inline" gap="base">
-              <s-button disabled={isSubmitting} onClick={updatePlan}>
-                Save
-              </s-button>
-              <s-button variant="secondary" onClick={() => setEditingPlan(null)}>
-                Cancel
-              </s-button>
-            </s-stack>
-
-          </s-box>
-        </s-section>
+          </Modal.Section>
+        </Modal>
       )}
 
-      {/* CREATE */}
       {creatingPlan && (
-        <s-section heading="Create New Plan">
-          <s-box padding="base" borderWidth="base" borderRadius="base">
-
-            <s-text-field
-              label="Deliver every (months)"
-              value={newInterval}
-              onChange={(e) => setNewInterval(e.target.value)}
+        <Modal
+          open={true}
+          onClose={() => setCreatingPlan(false)}
+          title="Create Plan"
+          primaryAction={{
+            content: "Create",
+            onAction: () => createPlan(subscriptions?.[0]?.node?.id),
+            loading: isSubmitting,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setCreatingPlan(false),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <TextField
+              label="Plan Name"
+              value={planName}
+              onChange={(value) => setPlanName(value)}
             />
 
-            <s-stack direction="inline" gap="base">
-              <s-button disabled={isSubmitting} onClick={() => createPlan(subscriptions[0].node.id)}>
-                Create
-              </s-button>
-              <s-button variant="secondary" onClick={() => setCreatingPlan(false)}>
-                Cancel
-              </s-button>
-            </s-stack>
-
-          </s-box>
-        </s-section>
+            <TextField
+              label="Deliver every (months)"
+              type="number"
+              value={newInterval}
+              onChange={(value) => setNewInterval(value)}
+            />
+          </Modal.Section>
+        </Modal>
       )}
-
-    </s-page>
+    </Page>
   );
 }

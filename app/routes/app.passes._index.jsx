@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { Page, Card, DataTable } from "@shopify/polaris";
-import { useLoaderData, useNavigate } from "react-router";
-=======
-import { Page, Card, DataTable, Button, Banner } from "@shopify/polaris";
+import { Page, Card, DataTable, Button, Banner, Badge, Modal, TextField } from "@shopify/polaris";
 import {
   useLoaderData,
   useNavigate,
@@ -10,41 +6,17 @@ import {
   Form,
 } from "react-router";
 import { useEffect, useState } from "react";
->>>>>>> origin/sparsh-safe
+import { useSubmit } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { connectToDatabase } from "../mongodb.server";
 
-<<<<<<< HEAD
-
-export async function loader({ request }) {
-    await connectToDatabase();
-    // Authenticate current shop
-    const { session } = await authenticate.admin(request);
-    
-    // Connect to MongoDB
-
-  // Fetch passes for this store only
-    const db = await connectToDatabase();
-
-    const passes = await db
-    .collection("passes")
-    .find({ store: session.shop })
-    .toArray();
-
-    return { passes };
-    }
-=======
 import { ObjectId } from "mongodb";
 
 // ---------------- LOADER ----------------
 
 export async function loader({ request }) {
-  console.log("----- LOADER START -----");
-
-  const { session } = await authenticate.admin(request);
-
-  console.log("Shop:", session.shop);
+  const { admin, session } = await authenticate.admin(request);
 
   const db = await connectToDatabase();
 
@@ -54,12 +26,25 @@ export async function loader({ request }) {
     .sort({ createdAt: -1 })
     .toArray();
 
+  const shopRes = await admin.graphql(`
+    {
+      shop {
+        metafield(namespace: "vip", key: "pass_variant_id") {
+          value
+        }
+      }
+    }
+  `);
+
+  const shopJson = await shopRes.json();
+  const activeVariantId =
+    shopJson?.data?.shop?.metafield?.value || null;
+
   const passes = passesRaw.map((pass) => ({
     ...pass,
-    _id: pass._id.toString(), // convert ObjectId → string
+    _id: pass._id.toString(),
+    is_active: pass.shopify_variant_id === activeVariantId,
   }));
-
-  console.log("Fetched passes:", passes.length);
 
   return { passes };
 }
@@ -67,280 +52,258 @@ export async function loader({ request }) {
 // ---------------- ACTION ----------------
 
 export async function action({ request }) {
-  console.log("----- ACTION START -----");
-
   const { admin, session } = await authenticate.admin(request);
-
-  console.log("Shop:", session.shop);
 
   const formData = await request.formData();
 
-  console.log("Raw FormData entries:");
-  for (const [key, value] of formData.entries()) {
-    console.log(key, value);
-  }
-
   let passId = formData.get("passId");
   const actionType = formData.get("actionType");
+  const currentState = formData.get("currentState") === "true";
 
-  console.log("Received passId:", passId);
-  console.log("Received actionType:", actionType);
-
-  // force to string
   passId = passId ? String(passId) : null;
 
-  console.log("Converted passId:", passId);
-
   if (!passId || !ObjectId.isValid(passId)) {
-    console.log("❌ Invalid passId:", passId);
     return null;
   }
 
   const db = await connectToDatabase();
-
   const passObjectId = new ObjectId(passId);
-
-  console.log("Mongo ObjectId:", passObjectId);
 
   const pass = await db.collection("passes").findOne({
     _id: passObjectId,
   });
 
-  console.log("Fetched pass from DB:", pass);
+  if (!pass) return null;
 
-  if (!pass) {
-    console.log("❌ Pass not found in database");
-    return null;
-  }
-
-  // ---------------- GET SHOP ID ----------------
-
-  console.log("Fetching Shopify shop ID...");
-
-  const shopResponse = await admin.graphql(`
-    {
-      shop {
-        id
-      }
-    }
-  `);
-
+  const shopResponse = await admin.graphql(`{ shop { id } }`);
   const shopData = await shopResponse.json();
-
-  console.log("Shop GraphQL response:", shopData);
-
   const shopId = shopData.data.shop.id;
 
-  console.log("Shop ID:", shopId);
+  // ---------------- TOGGLE ----------------
 
-  // ================= ACTIVATE PASS =================
+  if (actionType === "toggle") {
 
-  if (actionType === "activate") {
-    console.log("Activating pass:", passId);
-
-    await db
-      .collection("passes")
-      .updateMany({ store: session.shop }, { $set: { is_active: false } });
-
-    console.log("All passes deactivated");
-
-    await db
-      .collection("passes")
-      .updateOne({ _id: passObjectId }, { $set: { is_active: true } });
-
-    console.log("Pass activated:", passId);
-
-    const response = await admin.graphql(`
-      mutation {
-        metafieldsSet(metafields: [
-          {
+    if (!currentState) {
+      await admin.graphql(`
+        mutation {
+          metafieldsSet(metafields: [{
             namespace: "vip"
             key: "pass_variant_id"
             ownerId: "${shopId}"
             type: "single_line_text_field"
             value: "${pass.shopify_variant_id}"
+          }]) {
+            userErrors { message }
           }
-        ]) {
-          metafields { id }
+        }
+      `);
+
+      await db.collection("passes").updateMany(
+        { store: session.shop },
+        { $set: { is_active: false } }
+      );
+
+      await db.collection("passes").updateOne(
+        { _id: passObjectId },
+        { $set: { is_active: true } }
+      );
+    } else {
+      await admin.graphql(`
+        mutation {
+          metafieldsSet(metafields: [{
+            namespace: "vip"
+            key: "pass_variant_id"
+            ownerId: "${shopId}"
+            type: "single_line_text_field"
+            value: ""
+          }]) {
+            userErrors { message }
+          }
+        }
+      `);
+
+      await db.collection("passes").updateOne(
+        { _id: passObjectId },
+        { $set: { is_active: false } }
+      );
+    }
+
+    return null;
+  }
+
+  // ---------------- EDIT ----------------
+
+  if (actionType === "edit") {
+
+    const name = formData.get("name");
+    const percentage = formData.get("percentage");
+
+    // 1️⃣ Update MongoDB
+    await db.collection("passes").updateOne(
+      { _id: passObjectId },
+      {
+        $set: {
+          name,
+          discount_percentage: percentage
+        }
+      }
+    );
+
+    // 2️⃣ Update Shopify product title
+    await admin.graphql(`
+      mutation {
+        productUpdate(input: {
+          id: "${pass.shopify_product_id}",
+          title: "${name}"
+        }) {
           userErrors { message }
         }
       }
     `);
 
-    const result = await response.json();
+    // 3️⃣ Update shop metafield (only if active)
+    if (pass.is_active) {
+      await admin.graphql(`
+        mutation {
+          metafieldsSet(metafields: [{
+            namespace: "vip"
+            key: "discount_percentage"
+            ownerId: "${shopId}"
+            type: "number_integer"
+            value: "${parseInt(percentage)}"
+          }]) {
+            userErrors { message }
+          }
+        }
+      `);
+    }
 
-    console.log("Metafield update response:", result);
+    return null;
   }
 
-  // ================= DELETE PASS =================
+  // ---------------- DELETE ----------------
 
   if (actionType === "delete") {
-    console.log("Deleting pass:", passId);
-
     if (pass.shopify_product_id) {
-      console.log("Deleting Shopify product:", pass.shopify_product_id);
-
-      const response = await admin.graphql(`
+      await admin.graphql(`
         mutation {
           productDelete(input: {
             id: "${pass.shopify_product_id}"
           }) {
             deletedProductId
-            userErrors {
-              message
-            }
           }
         }
       `);
-
-      const result = await response.json();
-
-      console.log("Shopify delete response:", result);
     }
 
     await db.collection("passes").deleteOne({
       _id: passObjectId,
     });
 
-    console.log("Pass deleted from MongoDB");
-
-    // activate next pass automatically
-    if (pass.is_active) {
-      console.log("Deleted pass was active, finding next pass...");
-
-      const nextPass = await db.collection("passes").findOne({
-        store: session.shop,
-      });
-
-      console.log("Next pass:", nextPass);
-
-      if (nextPass) {
-        await db
-          .collection("passes")
-          .updateOne({ _id: nextPass._id }, { $set: { is_active: true } });
-
-        console.log("Next pass activated:", nextPass._id);
-
-        const response = await admin.graphql(`
-          mutation {
-            metafieldsSet(metafields: [
-              {
-                namespace: "vip"
-                key: "pass_variant_id"
-                ownerId: "${shopId}"
-                type: "single_line_text_field"
-                value: "${nextPass.shopify_variant_id}"
-              }
-            ]) {
-              metafields { id }
-            }
-          }
-        `);
-
-        const result = await response.json();
-
-        console.log("Metafield updated to next pass:", result);
-      } else {
-        console.log("No passes left, clearing metafield");
-
-        await admin.graphql(`
-          mutation {
-            metafieldsSet(metafields: [
-              {
-                namespace: "vip"
-                key: "pass_variant_id"
-                ownerId: "${shopId}"
-                type: "single_line_text_field"
-                value: ""
-              }
-            ]) {
-              metafields { id }
-            }
-          }
-        `);
-      }
-    }
+    return null;
   }
-
-  console.log("----- ACTION END -----");
 
   return null;
 }
 
 // ---------------- PAGE ----------------
->>>>>>> origin/sparsh-safe
 
 export default function Passes() {
   const { passes } = useLoaderData();
   const navigate = useNavigate();
+  const submit = useSubmit();
 
-<<<<<<< HEAD
-  const rows = passes.map((pass) => [
-    pass.name,
-    pass.passType,
-    `${pass.discountValue}%`,
-    pass.isActive ? "Active" : "Disabled",
-=======
   const [searchParams] = useSearchParams();
   const createdParam = searchParams.get("created");
 
   const [created, setCreated] = useState(createdParam);
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedPassId, setSelectedPassId] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const [editMode, setEditMode] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDiscount, setEditDiscount] = useState("");
+
   useEffect(() => {
     if (createdParam) {
-      const timer = setTimeout(() => {
-        setCreated(null);
-      }, 5000);
-
+      const timer = setTimeout(() => setCreated(null), 5000);
       return () => clearTimeout(timer);
     }
   }, [createdParam]);
 
+  const selectedPass = passes.find(p => p._id === selectedPassId);
+
+  // ✅ PREFILL EDIT DATA
+  useEffect(() => {
+    if (selectedPass && editMode) {
+      setEditName(selectedPass.name);
+      setEditDiscount(selectedPass.discount_percentage);
+    }
+  }, [selectedPass, editMode]);
+
   const rows = passes.map((pass) => [
     pass.name,
 
-    `${pass.duration_months} Months`,
+    `${pass.duration_months || 0} Months`,
 
-    `${pass.discount_percentage}%`,
+    `${pass.discount_percentage || 0}%`,
 
-    pass.is_active ? "Active" : "Disabled",
+    <Badge
+      key={`status-${pass._id}`}
+      tone={pass.is_active ? "success" : undefined}
+    >
+      {pass.is_active ? "Active" : "Inactive"}
+    </Badge>,
 
-    <div key={pass._id} style={{ display: "flex", gap: "8px" }}>
-      {!pass.is_active && (
-        <Form method="post">
-          <input type="hidden" name="passId" value={pass._id} />
-          <input type="hidden" name="actionType" value="activate" />
-          <Button submit size="slim">
-            Activate
-          </Button>
-        </Form>
-      )}
-
+    <div
+      key={`actions-${pass._id}`}
+      style={{ display: "flex", gap: "8px" }}
+    >
       <Form method="post">
         <input type="hidden" name="passId" value={pass._id} />
-        <input type="hidden" name="actionType" value="delete" />
-        <Button tone="critical" submit size="slim">
-          Delete
+        <input type="hidden" name="actionType" value="toggle" />
+        <input type="hidden" name="currentState" value={pass.is_active} />
+
+        <Button submit size="slim" variant="primary">
+          {pass.is_active ? "Deactivate" : "Activate"}
         </Button>
       </Form>
+
+      <Button
+        size="slim"
+        onClick={() => {
+          setSelectedPassId(pass._id);
+          setEditMode(true);
+          setModalOpen(true);
+        }}
+      >
+        Edit
+      </Button>
+
+      <Button
+        tone="critical"
+        size="slim"
+        onClick={() => {
+          setSelectedPassId(pass._id);
+          setEditMode(false);
+          setModalOpen(true);
+        }}
+      >
+        Delete
+      </Button>
     </div>,
->>>>>>> origin/sparsh-safe
   ]);
 
   return (
     <Page
-      title="Pass Management"
+      title="Membership Management"
       primaryAction={{
-        content: "Create Pass",
+        content: "Create Membership",
         onAction: () => navigate("create"),
       }}
     >
-<<<<<<< HEAD
-      <Card>
-        <DataTable
-          columnContentTypes={["text", "text", "text", "text"]}
-          headings={["Name", "Type", "Discount", "Status"]}
-=======
       {created && (
         <Banner tone="success" title="VIP Pass Created Successfully">
           Your VIP membership pass was created.
@@ -351,14 +314,75 @@ export default function Passes() {
         <DataTable
           columnContentTypes={["text", "text", "text", "text", "text"]}
           headings={["Name", "Duration", "Discount", "Status", "Action"]}
->>>>>>> origin/sparsh-safe
           rows={rows}
         />
       </Card>
+
+      <Modal
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditMode(false);
+        }}
+        title={editMode ? "Edit Membership" : "Delete Membership"}
+        primaryAction={{
+          content: editMode ? "Save" : "Delete",
+          destructive: !editMode,
+          loading: loading,
+          onAction: async () => {
+            setLoading(true);
+
+            const formData = new FormData();
+            formData.append("passId", selectedPassId);
+
+            if (editMode) {
+              formData.append("actionType", "edit");
+              formData.append("name", editName);
+              formData.append("percentage", editDiscount);
+            } else {
+              formData.append("actionType", "delete");
+            }
+
+            submit(formData, { method: "post" });
+
+            setLoading(false);
+            setModalOpen(false);
+            setEditMode(false);
+          }
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              setModalOpen(false);
+              setEditMode(false);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          {editMode ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <TextField
+                label="Name"
+                value={editName}
+                onChange={setEditName}
+              />
+              <TextField
+                label="Discount (%)"
+                type="number"
+                value={editDiscount}
+                onChange={setEditDiscount}
+              />
+            </div>
+          ) : (
+            <>
+              Are you sure you want to delete{" "}
+              <strong>{selectedPass?.name}</strong>?
+            </>
+          )}
+        </Modal.Section>
+      </Modal>
     </Page>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> origin/sparsh-safe

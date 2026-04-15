@@ -1,16 +1,24 @@
-import '@shopify/ui-extensions/preact';
-import {render} from "preact";
+// @ts-nocheck
 
-export default async () => {
-  render(<Extension />, document.body)
-}
+import {
+  extension,
+  Banner,
+  Text,
+} from "@shopify/ui-extensions";
 
-function Extension() {
-  return (
-    <s-banner>
-      <s-text>
-        {shopify.i18n.translate("earnPoints")}
-      </s-text>
-    </s-banner>
-  );
-}
+export default extension(
+  "customer-account.order-status.block.render",
+  (root, { i18n }) => {
+
+    const banner = root.createComponent(Banner);
+
+    const text = root.createComponent(
+      Text,
+      {},
+      i18n.translate("earnPoints")
+    );
+
+    banner.appendChild(text);
+    root.appendChild(banner);
+  }
+);

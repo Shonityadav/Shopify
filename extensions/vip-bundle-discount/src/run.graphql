@@ -7,16 +7,36 @@ query RunInput {
         __typename
         ... on ProductVariant {
           id
+          product {
+            id
+            metafield(namespace: "vip", key: "discount_percentage") {
+              value
+            }
+          }
         }
       }
       vipBundle: attribute(key: "_vip_bundle") {
         value
       }
     }
+
+    buyerIdentity {
+      customer {
+        metafield(namespace: "vip", key: "is_vip") {
+          value
+        }
+      }
+    }
   }
 
   shop {
-    metafield(namespace: "vip", key: "pass_variant_id") {
+    vip_metafield: metafield(namespace: "vip", key: "pass_variant_id") {
+      value
+    }
+    gift_metafield: metafield(namespace: "gift", key: "gift_variant_id") {
+      value
+    }
+    discount_metafield: metafield(namespace: "vip", key: "discount_percentage") {
       value
     }
   }

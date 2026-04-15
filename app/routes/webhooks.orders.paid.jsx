@@ -1,15 +1,9 @@
 import { authenticate } from "../shopify.server";
 import { updateCustomer, getCustomerByShopifyId, createCustomer } from "../models/Customer.server";
-<<<<<<< HEAD
-=======
-import { getVipPasses } from "../models/VipPass.server";
->>>>>>> origin/sparsh-safe
-
 export const action = async ({ request }) => {
 
   console.log("🔥 orders/paid webhook triggered");
 
-<<<<<<< HEAD
   const { shop, payload, admin } = await authenticate.webhook(request);
 
   // ---------------- GET VIP VARIANT ID FROM METAFIELD ----------------
@@ -50,30 +44,6 @@ export const action = async ({ request }) => {
 
   const hasVipProduct = payload.line_items.some(
     (item) => item.variant_id?.toString() === VIP_VARIANT_ID.toString()
-=======
-  const { shop, payload } = await authenticate.webhook(request);
-
-  // ---------------- GET VIP PASS FROM DB ----------------
-
-  const vipPasses = await getVipPasses(shop);
-  const vipPass = vipPasses.find((pass) => pass.is_active === true);
-
-  if (!vipPass) {
-    console.log("❌ No VIP pass configured");
-    return new Response("No VIP pass", { status: 200 });
-  }
-
-
-  const vipProductId = parseInt(
-    vipPass.shopify_product_id.replace("gid://shopify/Product/", "")
-  );
-
-
-  // ---------------- CHECK ORDER ITEMS ----------------
-
-  const hasVipProduct = payload.line_items.some(
-    (item) => item.product_id === vipProductId
->>>>>>> origin/sparsh-safe
   );
 
   if (!hasVipProduct) {
@@ -94,7 +64,6 @@ export const action = async ({ request }) => {
   }
 
 
-<<<<<<< HEAD
   // ---------------- GET MEMBERSHIP DURATION FROM METAFIELD ----------------
 
   let durationMonths;
@@ -119,18 +88,11 @@ export const action = async ({ request }) => {
     durationMonths = 1; // Default fallback
   }
 
-=======
->>>>>>> origin/sparsh-safe
   // ---------------- MEMBERSHIP DATES ----------------
 
   const startDate = new Date();
   const endDate = new Date();
-<<<<<<< HEAD
   endDate.setMonth(endDate.getMonth() + durationMonths);
-=======
-
-  endDate.setMonth(endDate.getMonth() + vipPass.duration_months);
->>>>>>> origin/sparsh-safe
 
 
   // ---------------- UPDATE CUSTOMER ----------------
@@ -154,6 +116,66 @@ export const action = async ({ request }) => {
       });
     }
     console.log("🎉 VIP Activated for customer:", customerId);
+
+    // ---------------- SAVE METAFIELDS IN SHOPIFY ----------------
+
+    try {
+      const customerGid = `gid://shopify/Customer/${customerId}`;
+
+      const metafieldResponse = await admin.graphql(`
+        mutation setVipMetafields {
+          metafieldsSet(metafields: [
+            {
+              ownerId: "${customerGid}",
+              namespace: "vip",
+              key: "is_vip",
+              type: "boolean",
+              value: "true"
+            },
+            {
+              ownerId: "${customerGid}",
+              namespace: "vip",
+              key: "end_date",
+              type: "date_time",
+              value: "${endDate.toISOString()}"
+            },
+            {
+              ownerId: "${customerGid}",
+              namespace: "vip",
+              key: "coupons_used",
+              type: "number_integer",
+              value: "0"
+            },
+            {
+              ownerId: "${customerGid}",
+              namespace: "vip",
+              key: "coupons_left",
+              type: "number_integer",
+              value: "10"
+            }
+          ]) {
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `);
+
+      const metafieldData = await metafieldResponse.json();
+
+      if (metafieldData.data?.metafieldsSet?.userErrors?.length) {
+        console.error(
+          "❌ Metafield errors:",
+          metafieldData.data.metafieldsSet.userErrors
+        );
+      } else {
+        console.log("✅ VIP metafields saved to Shopify");
+      }
+
+    } catch (error) {
+      console.error("❌ Error saving VIP metafields:", error);
+    }
   } catch (error) {
     console.error("❌ Error activating VIP:", error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });

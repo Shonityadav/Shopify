@@ -1,8 +1,31 @@
+
+
+
+
+
+<script>
+  window.__bundleMetafields = window.__bundleMetafields || {};
+
+  {% for item in cart.items %}
+    window.__bundleMetafields["{{ item.key }}"] = [];
+
+    {% if item.product.metafields.bundle.products.value != blank %}
+      {% for gid in item.product.metafields.bundle.products.value %}
+        window.__bundleMetafields["{{ item.key }}"].push({
+          title: "Bundled Product",
+          image: ""
+        });
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+</script>
+
+
 {% if shop.metafields.vip.pass_variant_id.value != blank %}
 <script>
 
   const VIP_ID = {{ shop.metafields.vip.pass_variant_id.value | split: '/' | last | default: 0 }};
-  const GIFT_ID = 42213975720039;
+  const GIFT_ID = {{ shop.metafields.gift.gift_variant_id.value | split: '/' | last | default: 0 }};
 document.addEventListener("DOMContentLoaded", async function(){
 
 console.log("[VIP DEBUG] Script Loaded");
@@ -21,97 +44,306 @@ async function getCart(){
 /* ==============================
    VIP CART RULE ENFORCER
 ============================== */
+let isProcessingCart = false;
 
 window.enforceVipGiftRules = async function(cart){
 
-  const vipItem = cart.items.find(i => i.variant_id == VIP_ID);
-  const giftItem = cart.items.find(i => i.variant_id == GIFT_ID);
+  if (isProcessingCart) return false;
 
-  console.log("[VIP DEBUG] VIP item:", vipItem);
-  console.log("[VIP DEBUG] Gift item:", giftItem);
-  console.log("test");
+  if (!GIFT_ID || GIFT_ID == 0) {
+    console.log("❌ No ACTIVE gift configured");
+    return false;
+  }
 
-  /* FIX VIP QUANTITY */
+  /* ==============================
+     DETECT ITEMS
+  ============================== */
 
-  if(vipItem && vipItem.quantity > 1){
+  const vipItems = cart.items.filter(i => 
+    i.product_type === "vip_membership" ||
+    (i.product_title && i.product_title.toLowerCase().includes("vip")) ||
+    i.properties?._vip === "true"
+  );
 
-    console.log("[VIP DEBUG] Fixing VIP quantity to 1");
+  const giftItems = cart.items.filter(i => 
+    i.properties?._gift === "true"
+  );
+
+  const activeVipInCart = cart.items.find(i => i.variant_id == VIP_ID);
+  const activeGiftInCart = cart.items.find(i => i.variant_id == GIFT_ID);
+
+  const userRemovedVip = cart.attributes?.vip_removed === "true";
+
+  /* ==============================
+     REMOVE WRONG VIP PASSES
+  ============================== */
+
+  for (const item of vipItems) {
+
+    if (item.variant_id != VIP_ID) {
+
+      console.log("🧹 Removing old VIP:", item.variant_id);
+
+      isProcessingCart = true;
+
+      await fetch('/cart/change.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.key,
+          quantity: 0
+        })
+      });
+
+      isProcessingCart = false;
+      window.location.reload();
+
+      return true;
+    }
+  }
+
+  /* ==============================
+     REMOVE WRONG GIFTS
+  ============================== */
+
+  for (const item of giftItems) {
+
+    if (item.variant_id != GIFT_ID) {
+
+      console.log("🧹 Removing old gift:", item.variant_id);
+
+      isProcessingCart = true;
+
+      await fetch('/cart/change.js',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          id: item.key,
+          quantity: 0
+        })
+      });
+
+      isProcessingCart = false;
+      window.location.reload();
+
+      return true;
+    }
+  }
+
+  /* ==============================
+     REMOVE GIFT IF VIP REMOVED (🔥 FIXED)
+  ============================== */
+
+  if(vipItems.length === 0 && giftItems.length > 0){
+
+    console.log("🧹 Removing gifts (VIP removed)");
+
+    isProcessingCart = true;
+
+    for (const item of giftItems) {
+
+      await fetch('/cart/change.js',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          id: item.key,
+          quantity: 0
+        })
+      });
+
+    }
+
+    isProcessingCart = false;
+    window.location.reload();
+
+    return true;
+  }
+
+  /* ==============================
+     FIX VIP QUANTITY
+  ============================== */
+
+  if(activeVipInCart && activeVipInCart.quantity > 1){
+
+    console.log("[VIP DEBUG] Fixing VIP quantity");
+
+    isProcessingCart = true;
 
     await fetch('/cart/change.js',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        id: vipItem.key,
+        id: activeVipInCart.key,
         quantity: 1
       })
     });
 
-    location.reload();
+    isProcessingCart = false;
+    window.location.reload();
     return true;
   }
 
-  /* FIX GIFT QUANTITY */
+  /* ==============================
+     FIX GIFT QUANTITY
+  ============================== */
 
-  if(giftItem && giftItem.quantity > 1){
+  if(activeGiftInCart && activeGiftInCart.quantity > 1){
 
-    console.log("[VIP DEBUG] Fixing gift quantity to 1");
+    console.log("[VIP DEBUG] Fixing gift quantity");
+
+    isProcessingCart = true;
 
     await fetch('/cart/change.js',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        id: giftItem.key,
+        id: activeGiftInCart.key,
         quantity: 1
       })
     });
 
-    location.reload();
+    isProcessingCart = false;
+    window.location.reload();
     return true;
   }
 
-  /* VIP exists but gift missing */
+  /* ==============================
+     DETECT MANUAL VIP REMOVAL
+  ============================== */
 
-  if(vipItem && !giftItem){
+  if (!vipItems.length && VIP_ID && !userRemovedVip) {
 
-    console.log("[VIP DEBUG] Adding missing gift");
+    console.log("👤 VIP removed manually → setting flag");
 
-    await fetch('/cart/add.js',{
+    isProcessingCart = true;
+
+    await fetch('/cart/update.js', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        items:[{
-          id: GIFT_ID,
-          quantity: 1
+        attributes: {
+          vip_removed: "true"
+        }
+      })
+    });
+
+    isProcessingCart = false;
+    window.location.reload();
+
+    return true;
+  }
+
+  /* ==============================
+     ADD ACTIVE VIP IF MISSING
+  ============================== */
+
+  if (!activeVipInCart && VIP_ID && VIP_ID != 0 && !userRemovedVip) {
+
+    console.log("👑 Adding active VIP:", VIP_ID);
+
+    isProcessingCart = true;
+
+    await fetch('/cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: [{
+          id: Number(VIP_ID),
+          quantity: 1,
+          properties: {
+            _vip: "true"
+          }
         }]
       })
     });
 
-    location.reload();
-    return true;
-  }
-
-  /* VIP removed → remove gift */
-
-  if(!vipItem && giftItem){
-
-    console.log("[VIP DEBUG] Removing orphan gift");
-
-    await fetch('/cart/change.js',{
+    await fetch('/cart/update.js', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        id: giftItem.key,
-        quantity: 0
+        attributes: {
+          vip_removed: ""
+        }
       })
     });
 
-    location.reload();
+    isProcessingCart = false;
+    window.location.reload();
+
+    return true;
+  }
+
+  /* ==============================
+     ADD ACTIVE GIFT
+  ============================== */
+
+  if(activeVipInCart && !activeGiftInCart){
+
+    console.log("🎁 Adding active gift:", GIFT_ID);
+
+    isProcessingCart = true;
+
+    await fetch('/cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: [{
+          id: Number(GIFT_ID),
+          quantity: 1,
+          properties: {
+            _gift: "true"
+          }
+        }]
+      })
+    });
+
+    isProcessingCart = false;
+    window.location.reload();
+
     return true;
   }
 
   return false;
-}
+};
 
+const originalFetch = window.fetch;
+
+window.fetch = async (...args) => {
+
+  const url = args[0]?.toString() || "";
+
+  const isCartApi =
+    url.includes("/cart/add") ||
+    url.includes("/cart/change") ||
+    url.includes("/cart/update") ||
+    url.includes("/cart/clear");
+
+  const res = await originalFetch(...args);
+
+  if (isCartApi) {
+
+    console.log("[VIP DEBUG] Cart API detected:", url);
+
+    try {
+      const cartRes = await originalFetch('/cart.js');
+      const cart = await cartRes.json();
+
+      const shouldRerun = await window.enforceVipGiftRules(cart);
+
+      if (shouldRerun) {
+        console.log("[VIP DEBUG] Re-running rules...");
+      }
+
+      // 🔥 THIS WAS MISSING → UI refresh
+      document.dispatchEvent(new CustomEvent('cart:refresh'));
+
+    } catch (err) {
+      console.error("Cart sync error:", err);
+    }
+  }
+
+  return res;
+};
 /* ==============================
    GENERATE COUPONS
 ============================== */
@@ -282,18 +514,21 @@ document.addEventListener("submit", async function(e){
   let sellingPlanId = sellingPlanInput?.value || null;
 
 
-  /* fallback from metafield */
-  if (!sellingPlanId) {
-    sellingPlanId = "{{ shop.metafields['app--326294798337--vip'].subscribe_plan_id.value | split: '/' | last }}";
-  }
+
+
+
 
   /* if no active plan → disable subscription */
   if (!sellingPlanId) {
     console.log("[VIP DEBUG] No active selling plan → subscription disabled");
   }
 
+  const isVipPurchase = selectedType === "vip";
   /* If subscribe is checked ensure selling plan exists */
-  if (subscribeCheckbox?.checked) {
+  if (isVipPurchase) {
+    sellingPlanId = null;
+    console.log("[VIP DEBUG] VIP selected → forcing no subscription");
+  } else if (subscribeCheckbox?.checked) {
     sellingPlanId = "{{ shop.metafields['app--326294798337--vip'].subscribe_plan_id.value | split: '/' | last }}";
   }
 
@@ -301,9 +536,11 @@ document.addEventListener("submit", async function(e){
 
   /* If NOT VIP → allow normal Shopify flow */
 
-  const isVipPurchase = selectedType === "vip";
 
+if (isVipPurchase) {
   console.log("[VIP DEBUG] VIP purchase detected");
+}
+  
 
   if(isVipPurchase || sellingPlanId){
     e.preventDefault();
@@ -314,31 +551,63 @@ document.addEventListener("submit", async function(e){
 
  
 
-  /* MAIN PRODUCT */
+  /* ==============================
+   SMART PRODUCT HANDLING
+  ============================== */
 
+  const cart = await fetch('/cart.js').then(r => r.json());
 
-  console.log("[VIP DEBUG] sellingPlanId at submit:", sellingPlanId);
+  const existingItem = cart.items.find(
+    (i) => i.variant_id == mainVariant
+  );
 
-  /* MAIN PRODUCT */
+  if (existingItem) {
 
-  if (sellingPlanId) {
+    console.log("[VIP DEBUG] Product already in cart");
 
-    console.log("[VIP DEBUG] Adding SUBSCRIPTION product");
+    // -----------------------------
+    // CASE: SUBSCRIPTION SELECTED
+    // -----------------------------
+    if (sellingPlanId) {
 
-    items.push({
-      id: mainVariant,
-      quantity: 1,
-      selling_plan: sellingPlanId
-    });
+      console.log("[VIP DEBUG] Converting to subscription");
+
+      await fetch('/cart/change.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: existingItem.key,
+          quantity: 1,
+          selling_plan: sellingPlanId
+        })
+      });
+
+    } else {
+
+      console.log("[VIP DEBUG] Keeping existing product (no duplicate)");
+
+    }
 
   } else {
 
-    console.log("[VIP DEBUG] Adding NORMAL product");
+    console.log("[VIP DEBUG] Adding new product");
 
-    items.push({
-      id: mainVariant,
-      quantity: 1
-    });
+    if (sellingPlanId) {
+
+      items.push({
+        id: mainVariant,
+        quantity: 1,
+        selling_plan: sellingPlanId
+      });
+
+    } else {
+
+      items.push({
+        id: mainVariant,
+        quantity: 1
+      });
+
+    }
 
   }
   
@@ -346,7 +615,7 @@ document.addEventListener("submit", async function(e){
 
   /* CHECK CART FIRST */
 
-  const cart = await fetch('/cart.js').then(r => r.json());
+  
 
   const vipExists = cart.items.some(i => i.variant_id == VIP_ID);
 
@@ -434,7 +703,9 @@ document.addEventListener("DOMContentLoaded", () => {
     .selling-plan-group,
     [data-product-purchase-options],
     [data-selling-plan-group]
-  `).forEach(el => el.remove());
+  `).forEach(el => {
+  el.style.display = "none"; // ✅ hide, DON'T remove
+});
 
 });
 (function(){
@@ -485,7 +756,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("DOMContentLoaded", function(){
 
     const VIP_ID = {{ shop.metafields.vip.pass_variant_id.value | split: '/' | last | default: 0 }};
-    const GIFT_ID = 42213975720039;
+    const GIFT_ID = {{ shop.metafields.gift.gift_variant_id.value | split: '/' | last | default: 0 }};
 
     console.log("[VIP DEBUG] Locking quantity controls");
 

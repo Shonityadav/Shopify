@@ -4,23 +4,18 @@ import {
   FormLayout,
   TextField,
   Button,
-  Banner
+  Banner,
+  
 } from "@shopify/polaris";
+import { XIcon } from "@shopify/polaris-icons";
 
 import { useState } from "react";
-<<<<<<< HEAD
-import { Form, useActionData } from "react-router";
-
-import { authenticate } from "../shopify.server";
-import { connectToDatabase } from "../mongodb.server";
-import { createVipPass } from "../models/VipPass.server";
-=======
-import { Form, useActionData, redirect } from "react-router";
+import { Form, useActionData, useNavigate, redirect } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { connectToDatabase } from "../mongodb.server";
 import { createVipPass, deactivateVipPasses } from "../models/VipPass.server";
->>>>>>> origin/sparsh-safe
+
 
 
 // ---------------- ACTION ----------------
@@ -28,6 +23,7 @@ import { createVipPass, deactivateVipPasses } from "../models/VipPass.server";
 export const action = async ({ request }) => {
 
   const { admin, session } = await authenticate.admin(request);
+
 
   const formData = await request.formData();
 
@@ -93,6 +89,25 @@ export const action = async ({ request }) => {
 
     const productId = product.id;
     const variantId = product.variants.edges[0].node.id;
+
+    await admin.graphql(`
+      mutation {
+        productUpdate(
+          input: {
+            id: "${productId}",
+            status: UNLISTED
+          }
+        ) {
+          product {
+            id
+            status
+          }
+          userErrors {
+            message
+          }
+        }
+      }
+    `);
 
 
     // ---------------- UPDATE VARIANT PRICE ----------------
@@ -160,7 +175,9 @@ export const action = async ({ request }) => {
 
     // ---------------- CREATE PRODUCT METAFIELDS ----------------
 
-    await admin.graphql(`
+    
+
+    const metafieldResponse = await admin.graphql(`
       mutation {
         metafieldsSet(metafields: [
 
@@ -169,7 +186,7 @@ export const action = async ({ request }) => {
             key: "discount_percentage"
             ownerId: "${productId}"
             type: "number_integer"
-            value: "${percentage}"
+            value: "${parseInt(percentage)}"
           },
 
           {
@@ -177,16 +194,30 @@ export const action = async ({ request }) => {
             key: "duration_months"
             ownerId: "${productId}"
             type: "number_integer"
-            value: "${duration}"
+            value: "${parseInt(duration)}"
           }
 
         ]) {
           metafields {
             id
+            key
+            value
+          }
+          userErrors {
+            field
+            message
           }
         }
       }
     `);
+
+    const metafieldResult = await metafieldResponse.json();
+
+    console.log("🔥 METAFIELD RESULT:", JSON.stringify(metafieldResult, null, 2));
+
+    if (metafieldResult.data.metafieldsSet.userErrors.length > 0) {
+      console.error("❌ Metafield Errors:", metafieldResult.data.metafieldsSet.userErrors);
+    }
 
 
     // ---------------- SAVE VARIANT ID IN SHOP METAFIELD ----------------
@@ -200,22 +231,31 @@ export const action = async ({ request }) => {
             ownerId: "${shopId}"
             type: "single_line_text_field"
             value: "${variantId}"
+          },
+          {
+            namespace: "vip"
+            key: "discount_percentage"
+            ownerId: "${shopId}"
+            type: "number_integer"
+            value: "${parseInt(percentage)}"
           }
         ]) {
           metafields {
             id
+            key
+            value
+          }
+          userErrors {
+            field
+            message
           }
         }
       }
     `);
 
-<<<<<<< HEAD
-
-=======
     // ---------------- DEACTIVATE OLD PASSES ----------------
 
     await deactivateVipPasses(session.shop);
->>>>>>> origin/sparsh-safe
     // ---------------- SAVE TO MONGODB ----------------
 
     await createVipPass({
@@ -227,28 +267,18 @@ export const action = async ({ request }) => {
       price,
       shopify_product_id: productId,
       shopify_variant_id: variantId,
-<<<<<<< HEAD
-    });
-
-
-    return {
-      success: true,
-      productId
-    };
-=======
       is_active: true
     });
 
 
     return redirect("/app/passes?created=true");
->>>>>>> origin/sparsh-safe
 
   } catch (error) {
 
     console.error(error);
 
     return {
-      error: "Something went wrong while creating VIP pass"
+      error: "Something went wrong while creating Membership"
     };
 
   }
@@ -261,6 +291,7 @@ export const action = async ({ request }) => {
 export default function CreateVipPass() {
 
   const actionData = useActionData();
+  const navigate = useNavigate();
 
   const [name, setName] = useState("VIP Monthly Pass");
   const [price, setPrice] = useState("29");
@@ -270,16 +301,42 @@ export default function CreateVipPass() {
 
   return (
 
-    <Page title="Create VIP Pass">
+    <Page>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: "16px",
+        }}
+      >
+        {/* LEFT SIDE */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          
+
+          <h1 style={{ fontSize: "20px", fontWeight: "600", margin: 0 }}>
+            Create Membership
+          </h1>
+        </div>
+
+        {/* RIGHT SIDE (RED X) */}
+        <Button
+          icon={XIcon}
+          tone="critical"
+          variant="tertiary"
+          onClick={() => navigate("/app/passes")}
+        />
+      </div>
 
       {actionData?.success && (
-        <Banner tone="success" title="VIP Pass Created Successfully">
+        <Banner tone="success" title="Membership Created Successfully">
           Product created successfully
         </Banner>
       )}
 
       {actionData?.error && (
-        <Banner tone="critical" title="Error Creating VIP Pass">
+        <Banner tone="critical" title="Error Creating Membership">
           {actionData.error}
         </Banner>
       )}
@@ -290,7 +347,7 @@ export default function CreateVipPass() {
           <FormLayout>
 
             <TextField
-              label="Pass Title"
+              label="Title"
               value={name}
               onChange={setName}
               name="name"
@@ -298,7 +355,7 @@ export default function CreateVipPass() {
             />
 
             <TextField
-              label="Monthly Price"
+              label="Price"
               type="number"
               value={price}
               onChange={setPrice}
@@ -306,7 +363,7 @@ export default function CreateVipPass() {
             />
 
             <TextField
-              label="Discount Percentage"
+              label="Discount"
               type="number"
               suffix="%"
               value={percentage}
@@ -323,7 +380,7 @@ export default function CreateVipPass() {
             />
 
             <TextField
-              label="VIP Benefits"
+              label="Benefits"
               value={benefits}
               onChange={setBenefits}
               name="benefits"
@@ -331,7 +388,7 @@ export default function CreateVipPass() {
             />
 
             <Button submit variant="primary">
-              Create VIP Pass
+              Create Membership
             </Button>
 
           </FormLayout>

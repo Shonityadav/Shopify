@@ -733,7 +733,8 @@ export async function updateSellingPlanDuration(
   admin,
   store,
   sellingPlanId,
-  intervalCount
+  intervalCount,
+  name
 ) {
   try {
     const plan = await getSellingPlan(store, sellingPlanId);
@@ -753,6 +754,7 @@ export async function updateSellingPlanDuration(
           sellingPlansToUpdate: [
             {
               id: sellingPlanId,
+              name:name,
               billingPolicy: {
                 recurring: {
                   interval: "MONTH",
@@ -780,7 +782,8 @@ export async function updateSellingPlanDuration(
     await updateSellingPlanRecord(
       store,
       sellingPlanId,
-      intervalCount
+      intervalCount,
+      name
     );
 
     console.log("✅ Selling plan updated");

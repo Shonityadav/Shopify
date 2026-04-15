@@ -12,6 +12,7 @@ import { attachSellingPlanToProducts } from "./services/SubscriptionService.serv
 // import { authenticate } from "./shopify.server";
 
 const sessionStorage =  getSessionStorage();
+console.log("✅ Session storage initialized:", !!sessionStorage);
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -27,15 +28,9 @@ const shopify = shopifyApp({
       console.log("🔥 afterAuth hook called!");
       console.log("🔥 Session shop:", session?.shop);
       console.log("🔥 Session scope:", session?.scope);
-
-      console.log("🔥 afterAuth triggered for:", session.shop);
-
       await upsertShop(session);
-
       console.log("✅ Shop upserted, now registering webhooks...");
-
       await shopify.registerWebhooks({ session });
-
       console.log("✅ Webhooks registered successfully!");
 
       try {
@@ -45,7 +40,7 @@ const shopify = shopifyApp({
           mutation CreateVipDiscount($startsAt: DateTime!) {
             discountAutomaticAppCreate(
               automaticAppDiscount: {
-                title: "VIP Bundle Discount"
+                title: "Membership Discount"
                 functionHandle: "vip-bundle-discount"
                 startsAt: $startsAt
                 metafields: [
@@ -73,9 +68,7 @@ const shopify = shopifyApp({
             startsAt: new Date().toISOString()
           }
         });
-
         const data = await response.json();
-
         if (data.errors) {
           console.error("❌ GraphQL Error creating discount:", data.errors[0]?.message);
         } else if (data.data?.discountAutomaticAppCreate?.userErrors?.length > 0) {
@@ -83,19 +76,14 @@ const shopify = shopifyApp({
         } else {
           console.log("✅ VIP discount created:", data.data?.discountAutomaticAppCreate?.automaticAppDiscount?.discountId);
         }
-
       } catch (error) {
         console.warn("⚠️  Discount creation failed (non-blocking):", error.message);
-        // Don't throw - this should not block app installation
       }
-
       // Initialize Subscribe & Save
       try {
         console.log("🔄 Initializing Subscribe & Save feature...");
         const group = await initializeSubscribeSave(admin, session.shop);
         console.log("Selling plan group:", group);
-
-        // Fetch all products
         const productsResponse = await admin.graphql(`
           query {
             products(first: 250) {
@@ -108,9 +96,7 @@ const shopify = shopifyApp({
 
         const productsData = await productsResponse.json();
         const productIds = productsData.data.products.nodes.map(p => p.id);
-
         await attachSellingPlanToProducts(admin, session.shop, productIds);
-
         console.log("✅ Subscribe & Save attached to all products");
         console.log("✅ Subscribe & Save initialized successfully!");
       } catch (error) {
@@ -123,44 +109,36 @@ const shopify = shopifyApp({
   future: {
     expiringOfflineAccessTokens: true,
   },
-
   webhooks: {
     ORDERS_CREATE: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/orders_create",
     },
-
     ORDERS_UPDATED: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/orders_updated",
     },
-
     ORDERS_PAID: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/orders/paid",
     },
-
     CUSTOMERS_CREATE: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/customers/create",
     },
-
     CUSTOMERS_UPDATE: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/customers/update",
     },
-
     APP_SCOPES_UPDATE: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/app/scopes_update",
     },
-
     APP_UNINSTALLED: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks/app_uninstalled",
     },
   },
-
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),

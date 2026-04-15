@@ -2,105 +2,334 @@
 /* eslint-disable react/prop-types */
 
 import { render } from "preact";
+import { useState } from "preact/hooks";
+import "@shopify/ui-extensions/preact";
+
+const BACKEND_URL =
+  "https://combinations-moon-state-translated.trycloudflare.com/api/cancel-subscription";
 
 export default async () => {
-
-  console.log("VIP extension started");
-
-  const vipData = await getVipData();
-
-  console.log("VIP Data:", vipData);
+  const data = await getVipData();
 
   render(
     <VipProfile
-      status={vipData.status}
-      couponsUsed={vipData.couponsUsed}
-      couponsLeft={vipData.couponsLeft}
+      isVip={data.isVip}
+      couponsUsed={data.couponsUsed}
+      couponsLeft={data.couponsLeft}
+      subscriptions={data.subscriptions}
+      endDate={data.endDate}
     />,
     document.body
   );
 };
 
-function VipProfile({ status, couponsUsed, couponsLeft }) {
+function VipProfile({ isVip, couponsUsed, couponsLeft, subscriptions, endDate  }) {
+  const isVipUser = isVip === "true" || isVip === true;
 
-  console.log("VipProfile rendered");
+  const [subs, setSubs] = useState(subscriptions);
+  const [loadingId, setLoadingId] = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [error, setError] = useState(null);
 
-  const isVip = status === "true";
+    // 👉 GRID HELPER (ADD THIS)
+  const chunkArray = (arr, size) => {
+    const result = [];
+    for (let i = 0; i < (arr || []).length; i += size) {
+      result.push(arr.slice(i, i + size));
+    }
+    return result;
+  };
+
+  const gridRows = chunkArray(subs || [], 3);
+
+  function calculateDaysLeft(endDate) {
+  if (!endDate) return 0;
+
+  const end = new Date(endDate);
+  const now = new Date();
+
+  const diff = end - now;
+
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+  return days > 0 ? days : 0;
+}
+
+const daysLeft = calculateDaysLeft(endDate);
 
   return (
-    <s-banner tone={isVip ? "success" : "info"}>
+    <s-stack gap="base">
 
-      <s-stack direction="block" gap="base">
+      {/* SUCCESS */}
+      {message && (
+        <s-banner tone="success">
+          <s-text>{message}</s-text>
+        </s-banner>
+      )}
 
-        <s-heading>VIP Membership</s-heading>
+      {/* ERROR */}
+      {error && (
+        <s-banner tone="critical">
+          <s-text>{error}</s-text>
+        </s-banner>
+      )}
 
-        {isVip ? (
-          <s-badge tone="auto">VIP Member ⭐</s-badge>
-        ) : (
-          <s-badge tone="neutral">Regular Customer</s-badge>
-        )}
+      {/* VIP */}
+      <s-banner tone={isVipUser ? "success" : "info"}>
+        <s-stack direction="block" gap="base">
+          <s-heading>VIP Membership</s-heading>
 
-        <s-divider />
+          <s-stack direction="inline" gap="small" alignment="center">
+  {isVipUser ? (
+    <>
+      <s-badge tone="auto">VIP Member ⭐</s-badge>
 
-        <s-stack direction="block" gap="small">
-          <s-text>Coupons Used: {couponsUsed}</s-text>
-          <s-text>Coupons Remaining: {couponsLeft}</s-text>
+      <s-badge tone={daysLeft <= 5 ? "critical" : "auto"}>
+        Days left: {daysLeft}
+      </s-badge>
+    </>
+  ) : (
+    <s-badge tone="neutral">Regular Customer</s-badge>
+  )}
+</s-stack>
+           <s-divider />
+
+          <s-stack direction="block" gap="small">
+            <s-text>Amount Saved: Rs.2000</s-text>
+            <s-text>Coupons Used: {couponsUsed}</s-text>
+            <s-text>Coupons Remaining: {couponsLeft}</s-text>
+          </s-stack>
         </s-stack>
+      </s-banner>
+
+      {/* SUBSCRIPTIONS */}
+     <s-heading>Subscriptions</s-heading>
+
+<s-stack gap="base">
+  {!subs || !subs.length ? (
+    <s-text>No subscriptions</s-text>
+  ) : (
+    gridRows.map((row, rowIndex) => (
+      <s-stack key={rowIndex} direction="inline" gap="base">
+
+        {row.map((sub) => (
+          <s-box
+            key={sub.id}
+            border="base"
+            padding="base"
+            borderRadius="base"
+          >
+            <s-stack gap="small">
+
+              {/* STATUS */}
+              <s-badge tone={sub.status === "ACTIVE" ? "success" : "critical"}>
+                {sub.status}
+              </s-badge>
+
+              {/* NEXT BILLING */}
+              <s-text appearance="subdued">
+                Next: {formatDate(sub.nextBillingDate)}
+              </s-text>
+
+              {/* ITEMS */}
+              {(sub.items || []).slice(0, 2).map((item, i) => (
+                <s-text key={`${sub.id}-${i}`}>• {item}</s-text>
+              ))}
+
+              {/* CANCEL BUTTON */}
+              {sub.status === "ACTIVE" && (
+                <>
+                  <s-button
+                    tone="critical"
+                    size="slim"
+                    loading={loadingId === sub.id}
+                    onClick={() => {
+                      setConfirmId(sub.id);
+                    }}
+                  >
+                    Cancel
+                  </s-button>
+
+                  {/* CONFIRMATION */}
+                  {confirmId === sub.id && (
+                    <s-banner tone="critical">
+                      <s-stack gap="small">
+                        <s-text>
+                          Are you sure you want to cancel?
+                        </s-text>
+
+                        <s-stack direction="inline" gap="small">
+                          <s-button
+                            tone="critical"
+                            loading={loadingId === sub.id}
+                            onClick={() => {
+                              cancelSubscription(
+                                sub.id,
+                                sub.shop,
+                                setSubs,
+                                setLoadingId,
+                                setConfirmId,
+                                setMessage,
+                                setError
+                              );
+                            }}
+                          >
+                            Yes
+                          </s-button>
+
+                          <s-button onClick={() => setConfirmId(null)}>
+                            No
+                          </s-button>
+                        </s-stack>
+                      </s-stack>
+                    </s-banner>
+                  )}
+                </>
+              )}
+
+            </s-stack>
+          </s-box>
+        ))}
 
       </s-stack>
-
-    </s-banner>
+    ))
+  )}
+</s-stack>
+    </s-stack>
   );
 }
 
+/* -----------------------------
+   FETCH
+----------------------------- */
 async function getVipData() {
-
-  const response = await fetch(
-    "shopify:customer-account/api/2025-10/graphql.json",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query: `
-        query getVip {
-          customer {
-            vipStatus: metafield(namespace: "vip", key: "status") {
-              value
+  try {
+    const response = await fetch(
+      "shopify:customer-account/api/unstable/graphql.json",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: `
+            query {
+              shop {
+                myshopifyDomain
+              }
+              customer {
+                id
+                isVip: metafield(namespace: "vip", key: "is_vip") {
+                  value
+                }
+                couponsUsed: metafield(namespace: "vip", key: "coupons_used") {
+                  value
+                }
+                couponsLeft: metafield(namespace: "vip", key: "coupons_left") {
+                  value
+                }
+                endDate: metafield(namespace: "vip", key: "end_date") {
+                  value
+                }
+              }
             }
+          `,
+        }),
+      }
+    );
 
-            couponsUsed: metafield(namespace: "vip", key: "coupons_used") {
-              value
-            }
-            couponsLeft: metafield(namespace: "vip", key: "coupons_left") {
-              value
-            }
-          }
-        }
-        `,
-      }),
-    }
-  );
+    const result = await response.json();
 
-  const result = await response.json();
+    const customer = result.data.customer;
+    const customerId = customer.id;
+    const shop = result.data.shop.myshopifyDomain;
 
-  console.log("FULL GRAPHQL RESPONSE:", result);
+    const subRes = await fetch(
+      `${BACKEND_URL}?customerId=${encodeURIComponent(
+        customerId
+      )}&shop=${shop}`
+    );
 
-  if (!result.data) {
-    console.error("GraphQL error:", result.errors);
+    const subData = await subRes.json();
+
     return {
-      status: null,
-      couponsUsed: 0,
-      couponsLeft: 0,
+      isVip: customer?.isVip?.value ?? null,
+      couponsUsed: parseInt(customer?.couponsUsed?.value ?? "0"),
+      couponsLeft: parseInt(customer?.couponsLeft?.value ?? "0"),
+      endDate: customer?.endDate?.value || null,
+      subscriptions:
+        (subData.subscriptions || []).map((sub) => ({
+          ...sub,
+          shop,
+        })) || [],
     };
+  } catch (error) {
+    console.error("❌ Fetch error:", error);
+    return fallbackData();
   }
+}
 
-  const data = result.data;
+/* -----------------------------
+   CANCEL
+----------------------------- */
+async function cancelSubscription(
+  contractId,
+  shop,
+  setSubs,
+  setLoadingId,
+  setConfirmId,
+  setMessage,
+  setError
+) {
+  try {
+    console.log("🚀 API CALL START", contractId, shop);
 
+    setLoadingId(contractId);
+
+    const body = new URLSearchParams({
+      contractId,
+      shop,
+    });
+
+    const res = await fetch(BACKEND_URL, {
+      method: "POST",
+      body,
+    });
+
+    const data = await res.json();
+
+    console.log("📦 API RESPONSE:", data);
+
+    if (data.success) {
+      setSubs((prev) => prev.filter((s) => s.id !== contractId));
+      setMessage("Subscription cancelled successfully ✅");
+    } else {
+      setError("Failed to cancel subscription ❌");
+    }
+  } catch (err) {
+    console.error("❌ Cancel error:", err);
+    setError("Something went wrong ❌");
+  } finally {
+    setConfirmId(null);
+    setLoadingId(null);
+  }
+}
+
+/* ----------------------------- */
+function formatDate(dateString) {
+  if (!dateString) return "N/A";
+
+  return new Date(dateString).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function fallbackData() {
   return {
-    status: data.customer?.vipStatus?.value,
-    couponsUsed: data.customer?.couponsUsed?.value ?? 0,
-    couponsLeft: data.customer?.couponsLeft?.value ?? 0,
+    isVip: false,
+    couponsUsed: 0,
+    couponsLeft: 0,
+    subscriptions: [],
   };
 }

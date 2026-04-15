@@ -1,86 +1,44 @@
 import { connectToDatabase } from "../mongodb.server";
 
+// ---------------- CREATE ----------------
 export async function createCustomer(data) {
   const db = await connectToDatabase();
 
-  return db.collection("customers").insertOne({
-    store: data.store,
-    shopify_customer_id: data.shopify_customer_id,
-    email: data.email || null,
-    first_name: data.first_name || null,
-    last_name: data.last_name || null,
-    is_vip: data.is_vip || false,
-    membership_start_date: data.membership_start_date || null,
-    membership_end_date: data.membership_end_date || null,
-    coupons_remaining: data.coupons_remaining || 0,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  return db.collection("customers").updateOne(
+    {
+      store: data.store,
+      shopify_customer_id: String(data.shopify_customer_id),
+    },
+    {
+      $set: {
+        email: data.email || null,
+        first_name: data.first_name || null,
+        last_name: data.last_name || null,
+        is_vip: data.is_vip || false,
+        membership_start_date: data.membership_start_date || null,
+        membership_end_date: data.membership_end_date || null,
+        coupons_remaining: data.coupons_remaining || 0,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
 }
 
-<<<<<<< HEAD
+
+// ---------------- GET ALL ----------------
 export async function getCustomers(store) {
   const db = await connectToDatabase();
   return db.collection("customers").find({ store }).toArray();
 }
 
-export async function getCustomerByShopifyId(store, shopify_customer_id) {
-  const db = await connectToDatabase();
-  return db.collection("customers").findOne({ store, shopify_customer_id });
-}
 
+// ---------------- UPDATE ----------------
 export async function updateCustomer(store, shopify_customer_id, data) {
   const db = await connectToDatabase();
-
-  return db.collection("customers").updateOne(
-    { store, shopify_customer_id },
-    {
-      $set: {
-        email: data.email !== undefined ? data.email : undefined,
-        first_name: data.first_name !== undefined ? data.first_name : undefined,
-        last_name: data.last_name !== undefined ? data.last_name : undefined,
-        is_vip: data.is_vip !== undefined ? data.is_vip : undefined,
-        membership_start_date: data.membership_start_date !== undefined ? data.membership_start_date : undefined,
-        membership_end_date: data.membership_end_date !== undefined ? data.membership_end_date : undefined,
-        coupons_remaining: data.coupons_remaining !== undefined ? data.coupons_remaining : undefined,
-        updatedAt: new Date(),
-      },
-    }
-  );
-=======
-
-export async function getCustomers(store) {
-  const db = await connectToDatabase();
-
-  return db
-    .collection("customers")
-    .find({ store })
-    .sort({ createdAt: -1 })
-    .toArray();
-}
-
-
-export async function getCustomerByShopifyId(store, shopify_customer_id) {
-  const db = await connectToDatabase();
-
-  return db.collection("customers").findOne({
-    store,
-    shopify_customer_id: Number(shopify_customer_id),
-  });
-}
-
-
-export async function updateCustomer(store, shopify_customer_id, data) {
-  const db = await connectToDatabase();
-
-  // 🔧 IMPORTANT FIX
-  const customerId = Number(shopify_customer_id);
-
-  console.log("Updating customer in MongoDB:", {
-    store,
-    shopify_customer_id: customerId,
-    data,
-  });
 
   const updateFields = {};
 
@@ -88,30 +46,32 @@ export async function updateCustomer(store, shopify_customer_id, data) {
   if (data.first_name !== undefined) updateFields.first_name = data.first_name;
   if (data.last_name !== undefined) updateFields.last_name = data.last_name;
   if (data.is_vip !== undefined) updateFields.is_vip = data.is_vip;
-  if (data.membership_start_date !== undefined)
-    updateFields.membership_start_date = data.membership_start_date;
-  if (data.membership_end_date !== undefined)
-    updateFields.membership_end_date = data.membership_end_date;
-  if (data.coupons_remaining !== undefined)
-    updateFields.coupons_remaining = data.coupons_remaining;
+  if (data.membership_start_date !== undefined) updateFields.membership_start_date = data.membership_start_date;
+  if (data.membership_end_date !== undefined) updateFields.membership_end_date = data.membership_end_date;
+  if (data.coupons_remaining !== undefined) updateFields.coupons_remaining = data.coupons_remaining;
 
   updateFields.updatedAt = new Date();
 
-  const result = await db.collection("customers").updateOne(
+  return db.collection("customers").updateOne(
     {
       store,
-      shopify_customer_id: customerId,
+      shopify_customer_id: String(shopify_customer_id),
     },
     {
       $set: updateFields,
+      $setOnInsert: {
+        createdAt: new Date(),
+      },
     },
-    {
-      upsert: true,
-    }
+    { upsert: true } // ✅ CRITICAL FIX
   );
+}
+// ---------------- GET ONE ----------------
+export async function getCustomerByShopifyId(store, shopify_customer_id) {
+  const db = await connectToDatabase();
 
-  console.log("MongoDB update result:", result);
-
-  return result;
->>>>>>> origin/sparsh-safe
+  return db.collection("customers").findOne({
+    store,
+    shopify_customer_id: String(shopify_customer_id),
+  });
 }

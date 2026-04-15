@@ -4,7 +4,10 @@
 
 {% assign base_price = product.selected_or_first_available_variant.price %}
 {% assign subscribe_price = base_price | times: 0.8 %}
-{% assign vip_price = base_price | times: 0.5 %}
+{% assign vip_discount = shop.metafields.vip.discount_percentage.value | default: 50 %}
+{% assign vip_multiplier = 100 | minus: vip_discount | divided_by: 100.0 %}
+{% assign vip_price = base_price | times: vip_multiplier %}
+{% assign is_vip = customer.metafields.vip.is_vip.value %}
 
 <div class="vip-purchase-options">
 
@@ -24,6 +27,8 @@
   </div>
 </label>
 
+{% unless is_vip == true or is_vip == "true" %}
+
 <label class="vip-option">
   <input type="radio" name="purchase_type" value="vip">
 
@@ -41,13 +46,14 @@
     {{ vip_price | money }}
   </div>
 </label>
+{% endunless %}
 
 </fieldset>
 
 {% if subscribe_plan != blank %}
 <!-- Subscription Option (Checkbox - can combine with above) -->
 <fieldset class="product-form__input subscription-option">
-<legend class="form__label">Additional Options</legend>
+
 
 <label class="vip-option subscribe-option">
   <input type="checkbox" name="purchase_option" value="subscribe">
@@ -59,12 +65,12 @@
       ✓ Free SCI Travel Packs<br>
       ✓ Easily edit, skip or cancel anytime<br>
       ✓ 0-Day Money Back Guarantee<br>
-      <small style="color:#888;">Add to your purchase type above for 20% savings</small>
+      {% comment %} <small style="color:#888;">Add to your purchase type above for 20% savings</small> {% endcomment %}
     </div>
   </div>
 
   <div class="vip-option-price">
-    <span class="subscribe-discount">20% OFF</span>
+    {% comment %} <span class="subscribe-discount">20% OFF</span> {% endcomment %}
   </div>
 </label>
 
@@ -74,6 +80,12 @@
 
 
 <style>
+
+  
+
+
+
+
 
 
 
@@ -152,6 +164,8 @@ background:#f8fffe;
   animation: pulse 2s infinite;
 }
 
+
+
 @keyframes pulse {
   0% { box-shadow: 0 0 0 2px rgba(57, 198, 198, 0.4); }
   50% { box-shadow: 0 0 0 4px rgba(57, 198, 198, 0.2); }
@@ -166,7 +180,10 @@ background:#f8fffe;
 .product__selling-plan-group,
 [data-product-purchase-options],
 [data-selling-plan-group]{
-  display:none !important;
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
 }
 
 </style>
@@ -176,28 +193,52 @@ background:#f8fffe;
 <script>
 document.addEventListener("DOMContentLoaded", function(){
 
+  /* -----------------------------
+     GET VIP STATUS FROM METAFIELD
+  ----------------------------- */
+  const IS_VIP = {{ customer.metafields.vip.is_vip.value | json }};
+  const vipActive = IS_VIP === true || IS_VIP === "true";
+
+  console.log("[VIP DEBUG] VIP STATUS:", vipActive);
+
+  /* -----------------------------
+     HIDE DEFAULT PRICE
+  ----------------------------- */
   const price = document.querySelector('.price--large');
 
   if(price){
-    price.closest('.price').style.display = "none";
+    const priceWrapper = price.closest('.price');
+    if(priceWrapper){
+      priceWrapper.style.display = "none";
+    }
   }
 
-  // --- variant swap helpers ---
+  /* -----------------------------
+     SELECTORS
+  ----------------------------- */
   const purchaseTypeRadios = document.querySelectorAll('input[name="purchase_type"]');
   const subscribeCheckbox = document.querySelector('input[name="purchase_option"][value="subscribe"]');
-  console.log(subscribeCheckbox,"[VIP DEBUG] Purchase options script loaded");
 
-  // product form / variant input
   const productForm = document.querySelector('form[action^="/cart/add"]');
-  const variantInput = productForm?.querySelector('[name="id"]');
 
   if(!productForm){
     console.warn("[VIP DEBUG] Product form not found");
     return;
   }
-  // Create selling plan input
+
+  const regularRadio = document.querySelector('input[value="regular"]');
+    if (regularRadio) {
+      regularRadio.checked = true;
+    }
+
+
+
+  /* -----------------------------
+     SUBSCRIPTION SETUP
+  ----------------------------- */
   const subscribePlanId = "{{ subscribe_plan | split: '/' | last }}";
-  console.log("[VIP DEBUG] Subscribe plan metafield:", subscribePlanId);
+  console.log("[VIP DEBUG] Subscribe plan:", subscribePlanId);
+
   let sellingPlanInput = productForm.querySelector('[name="selling_plan"]');
 
   if(!subscribePlanId){
@@ -208,67 +249,109 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   if(!sellingPlanInput){
-
     sellingPlanInput = document.createElement("input");
     sellingPlanInput.type = "hidden";
     sellingPlanInput.name = "selling_plan";
-
     productForm.appendChild(sellingPlanInput);
 
-    console.log("[VIP DEBUG] selling_plan input created");
-
+    console.log("[VIP DEBUG] Created selling_plan input");
   }
 
-
-  const originalVariantId = variantInput ? variantInput.value : null;
-
-  // VIP variant ID pulled from shop metafield
-  const vipVariantId = {{ shop.metafields.vip.pass_variant_id.value | split: '/' | last | default: 0 }};
-
-  
-
+  /* -----------------------------
+     VISUAL + STATE HANDLER
+  ----------------------------- */
   function updateVisualFeedback() {
-    const optionsContainer = document.querySelector('.vip-purchase-options');
-    if(!optionsContainer) return;
 
-    // Remove all combination classes
-    optionsContainer.classList.remove('with-subscription', 'regular-selected', 'vip-selected');
+  const optionsContainer = document.querySelector('.vip-purchase-options');
+  if (!optionsContainer) return;
 
-    const selectedType = document.querySelector('input[name="purchase_type"]:checked')?.value;
+  optionsContainer.classList.remove('with-subscription', 'regular-selected', 'vip-selected');
 
-    if (selectedType === 'regular') {
-      optionsContainer.classList.add('regular-selected');
-    } else if (selectedType === 'vip') {
-      optionsContainer.classList.add('vip-selected');
-    }
+  // ✅ safer selection
+  const selectedRadio = Array.from(document.querySelectorAll('input[name="purchase_type"]'))
+    .find(r => r.checked);
 
-    if (subscribeCheckbox?.checked) {
-      optionsContainer.classList.add('with-subscription');
-      console.log("[VIP DEBUG] Subscribe enabled → selling plan:",sellingPlanInput, subscribePlanId);
-      if (sellingPlanInput && subscribePlanId) {
-        sellingPlanInput.value = subscribePlanId;
-        console.log("[VIP DEBUG] Subscribe enabled → selling plan:", subscribePlanId);
-      }
+  const selectedType = selectedRadio ? selectedRadio.value : "regular";
 
-    } else {
+  console.log("[VIP DEBUG] selectedType:", selectedType);
 
-      if (sellingPlanInput) {
-        sellingPlanInput.value = "";
-        console.log("[VIP DEBUG] Subscribe disabled");
-      }
-
-    }
+  // ✅ ALWAYS reset first
+  if (sellingPlanInput) {
+    sellingPlanInput.value = "";
   }
 
-  
+  if (selectedType === 'regular') {
+    optionsContainer.classList.add('regular-selected');
+  } else if (selectedType === 'vip') {
+    optionsContainer.classList.add('vip-selected');
+  }
 
+  // 🚫 VIP → no subscription ever
+  if (selectedType === "vip") {
+    console.log("[VIP DEBUG] VIP → force no subscription");
+    return;
+  }
+
+  // ✅ Only if checkbox checked
+  if (subscribeCheckbox?.checked && subscribePlanId) {
+    sellingPlanInput.value = subscribePlanId;
+    console.log("[VIP DEBUG] Subscription enabled:", subscribePlanId);
+  } else {
+    console.log("[VIP DEBUG] Subscription disabled");
+  }
+}
+
+  /* -----------------------------
+   SAFE LOADER (SUBMIT BASED)
+  ----------------------------- */
+
+  document.addEventListener("submit", function (e) {
+
+    const form = e.target;
+
+    const isCartForm =
+      form.matches('form[action*="/cart/add"]') ||
+      form.classList.contains('product-form');
+
+    if (!isCartForm) return;
+
+    const btn = form.querySelector(
+      'button[type="submit"], button[name="add"], .product-form__submit'
+    );
+
+    if (!btn) return;
+
+    if (btn.dataset.loading === "true") return;
+
+    // mark loading
+    btn.dataset.loading = "true";
+
+    // store original text
+    btn.dataset.originalText = btn.innerText;
+
+    const span = btn.querySelector("span");
+
+    if (span) {
+      span.innerText = "Adding to cart...";
+    } else {
+      btn.innerText = "Adding to cart...";
+    }
+
+  }, true);
+  /* -----------------------------
+     EVENT LISTENERS
+  ----------------------------- */
   purchaseTypeRadios.forEach(radio => {
     radio.addEventListener('change', updateVisualFeedback);
   });
 
-  subscribeCheckbox?.addEventListener('change', updateVisualFeedback);
+  if(subscribeCheckbox){
+    subscribeCheckbox.addEventListener('change', updateVisualFeedback);
+  }
 
-  // initialize visual state and variant
+  /* -----------------------------
+     INITIAL STATE
+  ----------------------------- */
   updateVisualFeedback();
 
 });

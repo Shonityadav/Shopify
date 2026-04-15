@@ -22,8 +22,6 @@ export async function getVipPasses(store) {
   const db = await connectToDatabase();
 
   return db.collection("passes").find({ store }).toArray();
-<<<<<<< HEAD
-=======
 }
 
 export async function deactivateVipPasses(store) {
@@ -35,5 +33,4 @@ export async function deactivateVipPasses(store) {
       $set: { is_active: false }
     }
   );
->>>>>>> origin/sparsh-safe
 }
