@@ -15,15 +15,25 @@
 <fieldset class="product-form__input main-options">
 <legend class="form__label">Choose Purchase Type</legend>
 
-<label class="vip-option">
+<label class="vip-option{% if is_vip == true or is_vip == "true" %} vip-active-option{% endif %}">
   <input type="radio" name="purchase_type" value="regular" checked>
 
   <div class="vip-option-content">
-    <div class="vip-option-title">Buy one time</div>
+    <div class="vip-option-title">
+      Buy one time
+      {% if is_vip == true or is_vip == "true" %}
+        <span class="vip-member-badge">&#9733; VIP Price</span>
+      {% endif %}
+    </div>
   </div>
 
   <div class="vip-option-price">
-    {{ base_price | money }}
+    {% if is_vip == true or is_vip == "true" %}
+      <span class="vip-original-price">{{ base_price | money }}</span>
+      <span class="vip-discounted-price">{{ vip_price | money }}</span>
+    {% else %}
+      {{ base_price | money }}
+    {% endif %}
   </div>
 </label>
 
@@ -162,6 +172,39 @@ background:#f8fffe;
 /* Enhanced visual feedback for combinations */
 .vip-purchase-options.with-subscription .subscribe-option {
   animation: pulse 2s infinite;
+}
+
+/* VIP member — discounted price on Buy one time */
+.vip-member-badge {
+  display: inline-block;
+  background: gold;
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  letter-spacing: 0.3px;
+}
+
+.vip-active-option {
+  border: 2px solid gold !important;
+  background: #fffdf0;
+}
+
+.vip-original-price {
+  text-decoration: line-through;
+  opacity: 0.5;
+  font-weight: 400;
+  margin-right: 6px;
+  font-size: 13px;
+}
+
+.vip-discounted-price {
+  color: #c8860a;
+  font-weight: 700;
+  font-size: 16px;
 }
 
 

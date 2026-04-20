@@ -2,7 +2,7 @@
 
 client_id = "c775dd273743c8764b398ccc5b2e0f1a"
 name = "integrated-sale-app"
-application_url = "https://combinations-moon-state-translated.trycloudflare.com"
+application_url = "https://basically-cornwall-fan-marketplace.trycloudflare.com"
 embedded = true
 
 [build]
@@ -45,7 +45,7 @@ scopes = "customer_read_customers,read_cart_transforms,read_product_listings,rea
 
 [auth]
 redirect_urls = [
-  "https://combinations-moon-state-translated.trycloudflare.com/auth/callback"
+  "https://basically-cornwall-fan-marketplace.trycloudflare.com/auth/callback"
 ]
 
 [[extensions]]
@@ -94,6 +94,6 @@ description = "Selling plan GID for Subscribe & Save (e.g. gid://shopify/Selling
 
 
 [app_proxy]
-url = "https://combinations-moon-state-translated.trycloudflare.com"
+url = "https://basically-cornwall-fan-marketplace.trycloudflare.com"
 subpath = "integrated-sale-app"
 prefix = "apps"

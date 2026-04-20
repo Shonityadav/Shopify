@@ -1,5 +1,5 @@
 import { authenticate } from "../shopify.server";
-import { recordSubscriptionContract } from "../models/Subscription.server";
+import { recordSubscriptionContract } from "../services/SubscriptionService.server";
 import {
   handleSubscriptionContractCreated,
 } from "../webhookUtils.server";

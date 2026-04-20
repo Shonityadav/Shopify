@@ -1,6 +1,20 @@
+{% assign is_vip_raw = customer.metafields.vip.is_vip.value %}
+{% assign is_vip_json = is_vip_raw | json %}
+{% if is_vip_json == "true" or is_vip_raw == true or is_vip_raw == "true" %}
+<script>
+  window.APP_CONFIG = {
+    discount: {{ shop.metafields.vip.discount_percentage.value | default: 50 }},
+    isVip: true
+  };
+  console.log("[VIP EMBED] ✅ VIP customer detected — APP_CONFIG set, vip-global.js loading");
+</script>
 
-
-
+<script src="{{ 'vip-global.js' | asset_url }}" defer></script>
+{% else %}
+<script>
+  console.log("[VIP EMBED] ℹ️ Not a VIP customer — vip-global.js skipped. Raw value:", {{ is_vip_raw | json }});
+</script>
+{% endif %}
 
 
 <script>
@@ -26,6 +40,10 @@
 
   const VIP_ID = {{ shop.metafields.vip.pass_variant_id.value | split: '/' | last | default: 0 }};
   const GIFT_ID = {{ shop.metafields.gift.gift_variant_id.value | split: '/' | last | default: 0 }};
+
+  // True when the logged-in customer already has VIP status at the account level
+  const IS_CUSTOMER_VIP = {{ customer.metafields.vip.is_vip.value | json }} === true
+    || {{ customer.metafields.vip.is_vip.value | json }} === "true";
 document.addEventListener("DOMContentLoaded", async function(){
 
 console.log("[VIP DEBUG] Script Loaded");
@@ -49,6 +67,45 @@ let isProcessingCart = false;
 window.enforceVipGiftRules = async function(cart){
 
   if (isProcessingCart) return false;
+
+  /* ==============================
+     CUSTOMER IS ALREADY VIP → PURGE MEMBERSHIP + GIFT FROM CART
+  ============================== */
+
+  if (IS_CUSTOMER_VIP) {
+
+    console.log("[VIP DEBUG] Customer is already VIP → removing membership & gift from cart if present");
+
+    const itemsToRemove = cart.items.filter(i =>
+      i.variant_id == VIP_ID ||
+      i.variant_id == GIFT_ID ||
+      i.product_type === "vip_membership" ||
+      (i.product_title && i.product_title.toLowerCase().includes("vip")) ||
+      i.properties?._vip === "true" ||
+      i.properties?._gift === "true"
+    );
+
+    if (itemsToRemove.length > 0) {
+
+      isProcessingCart = true;
+
+      for (const item of itemsToRemove) {
+        console.log("🧹 Removing from VIP customer cart:", item.title, item.variant_id);
+        await fetch('/cart/change.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: item.key, quantity: 0 })
+        });
+      }
+
+      isProcessingCart = false;
+      window.location.reload();
+      return true;
+    }
+
+    // Customer is VIP, nothing to purge — skip all further rules
+    return false;
+  }
 
   if (!GIFT_ID || GIFT_ID == 0) {
     console.log("❌ No ACTIVE gift configured");
@@ -235,9 +292,10 @@ window.enforceVipGiftRules = async function(cart){
 
   /* ==============================
      ADD ACTIVE VIP IF MISSING
+     (skip if customer is already a VIP member at account level)
   ============================== */
 
-  if (!activeVipInCart && VIP_ID && VIP_ID != 0 && !userRemovedVip) {
+  if (!IS_CUSTOMER_VIP && !activeVipInCart && VIP_ID && VIP_ID != 0 && !userRemovedVip) {
 
     console.log("👑 Adding active VIP:", VIP_ID);
 
@@ -275,9 +333,10 @@ window.enforceVipGiftRules = async function(cart){
 
   /* ==============================
      ADD ACTIVE GIFT
+     (skip if customer is already a VIP member at account level)
   ============================== */
 
-  if(activeVipInCart && !activeGiftInCart){
+  if(!IS_CUSTOMER_VIP && activeVipInCart && !activeGiftInCart){
 
     console.log("🎁 Adding active gift:", GIFT_ID);
 

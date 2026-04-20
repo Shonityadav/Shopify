@@ -2,11 +2,11 @@
 /* eslint-disable react/prop-types */
 
 import { render } from "preact";
-import { useState } from "preact/hooks";
+import { useState, useEffect  } from "preact/hooks";
 import "@shopify/ui-extensions/preact";
 
 const BACKEND_URL =
-  "https://combinations-moon-state-translated.trycloudflare.com/api/cancel-subscription";
+  "https://basically-cornwall-fan-marketplace.trycloudflare.com/api/cancel-subscription";
 
 export default async () => {
   const data = await getVipData();
@@ -32,7 +32,19 @@ function VipProfile({ isVip, couponsUsed, couponsLeft, subscriptions, endDate  }
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
-    // 👉 GRID HELPER (ADD THIS)
+  useEffect(() => {
+    if (message || error) {
+      const timer = setTimeout(() => {
+        setMessage(null);
+        setError(null);
+      }, 3000); // disappears after 3 sec
+
+      return () => clearTimeout(timer);
+    }
+  }, [message, error]);
+
+
+  // 👉 GRID HELPER
   const chunkArray = (arr, size) => {
     const result = [];
     for (let i = 0; i < (arr || []).length; i += size) {
@@ -44,64 +56,56 @@ function VipProfile({ isVip, couponsUsed, couponsLeft, subscriptions, endDate  }
   const gridRows = chunkArray(subs || [], 3);
 
   function calculateDaysLeft(endDate) {
-  if (!endDate) return 0;
+    if (!endDate) return 0;
+    const end = new Date(endDate);
+    const now = new Date();
+    const diff = end - now;
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days > 0 ? days : 0;
+  }
 
-  const end = new Date(endDate);
-  const now = new Date();
-
-  const diff = end - now;
-
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-
-  return days > 0 ? days : 0;
-}
-
-const daysLeft = calculateDaysLeft(endDate);
+  const daysLeft = calculateDaysLeft(endDate);
 
   return (
     <s-stack gap="base">
 
-      {/* SUCCESS */}
-      {message && (
-        <s-banner tone="success">
-          <s-text>{message}</s-text>
-        </s-banner>
-      )}
-
-      {/* ERROR */}
-      {error && (
-        <s-banner tone="critical">
-          <s-text>{error}</s-text>
-        </s-banner>
-      )}
-
       {/* VIP */}
-      <s-banner tone={isVipUser ? "success" : "info"}>
-        <s-stack direction="block" gap="base">
-          <s-heading>VIP Membership</s-heading>
+      {isVipUser && (
+        <s-box
+      background="subdued"
+      border="base"
+      borderRadius="base"
+      padding="base"
+    >
+      <s-stack gap="base">
+        <s-heading>VIP Membership</s-heading>
 
-          <s-stack direction="inline" gap="small" alignment="center">
-  {isVipUser ? (
-    <>
-      <s-badge tone="auto">VIP Member ⭐</s-badge>
+        <s-stack direction="inline" gap="small">
+          {/* Main VIP state badge */}
+          <s-badge tone="critical">VIP Member ⭐</s-badge>
 
-      <s-badge tone={daysLeft <= 5 ? "critical" : "auto"}>
-        Days left: {daysLeft}
-      </s-badge>
-    </>
-  ) : (
-    <s-badge tone="neutral">Regular Customer</s-badge>
-  )}
-</s-stack>
-           <s-divider />
-
-          <s-stack direction="block" gap="small">
-            <s-text>Amount Saved: Rs.2000</s-text>
-            <s-text>Coupons Used: {couponsUsed}</s-text>
-            <s-text>Coupons Remaining: {couponsLeft}</s-text>
-          </s-stack>
+          {/* Days left badge: critical only when low */}
+          <s-badge tone={daysLeft <= 5 ? "critical" : "auto"}>
+            Days left: {daysLeft}
+          </s-badge>
         </s-stack>
-      </s-banner>
+
+        <s-divider />
+
+        <s-stack direction="block" gap="small">
+          <s-text>Amount Saved: Rs.2000</s-text>
+          <s-text>Coupons Used: {couponsUsed}</s-text>
+          <s-text>Coupons Remaining: {couponsLeft}</s-text>
+        </s-stack>
+      </s-stack>
+    </s-box>
+      )}
+
+      {(message || error) && (
+        <s-banner tone={message ? "success" : "critical"}>
+          <s-text>{message || error}</s-text>
+        </s-banner>
+      )}
 
       {/* SUBSCRIPTIONS */}
      <s-heading>Subscriptions</s-heading>
